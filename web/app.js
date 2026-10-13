@@ -44,6 +44,11 @@ function kwh(v) {
   return num(v, Math.abs(v) >= 100 ? 0 : 1);
 }
 
+const eurFmt = new Intl.NumberFormat(LOCALE, { style: "currency", currency: "EUR" });
+const eur = (v) => (v === null || v === undefined ? "–" : eurFmt.format(v));
+const hasTariff = () => tariff.import_eur_kwh > 0 || tariff.export_eur_kwh > 0;
+let tariff = { import_eur_kwh: 0, export_eur_kwh: 0 };
+
 const pct = (ratio) => (ratio === null || ratio === undefined ? "–" : num(ratio * 100, 0));
 
 const dateFmt = new Intl.DateTimeFormat(LOCALE, { timeZone: TZ, weekday: "short", day: "numeric", month: "short", year: "numeric" });
@@ -403,6 +408,12 @@ function tile(label, value, unit, detail, extra) {
   return el("div", { class: "card tile" }, ...children);
 }
 
+function savingsTile(label, t) {
+  const v = t?.savings_eur;
+  return tile(label, v === null || v === undefined ? "–" : num(v, 2), "€",
+    t ? `eingespart ${eur(t.avoided_eur)} · Einspeisung ${eur(t.feed_in_eur)}` : null);
+}
+
 function meter(ratio, cls = "") {
   const fill = el("span");
   fill.style.width = `${Math.max(0, Math.min(1, ratio || 0)) * 100}%`;
@@ -435,10 +446,13 @@ function renderLive(p) {
     tile("Verbrauch", kwh(t.load_kwh), "kWh"),
     tile("Autarkie", pct(t.self_sufficiency), "%", "Anteil ohne Netzbezug"),
     tile("Eigenverbrauch", pct(t.self_consumption), "%", "Anteil PV selbst genutzt"),
-    tile("Einspeisung", kwh(t.export_kwh), "kWh", `Bezug ${kwh(t.import_kwh)} kWh`),
+    tile("Einspeisung", kwh(t.export_kwh), "kWh", hasTariff() ? `+${eur(t.feed_in_eur)} Vergütung` : null),
+    tile("Netzbezug", kwh(t.import_kwh), "kWh", hasTariff() ? `${eur(t.import_kwh * tariff.import_eur_kwh)} Kosten` : null),
     tile("Batterie", num(v.soc, 0), "%", `geladen ${kwh(t.charge_kwh)} · entladen ${kwh(t.discharge_kwh)} kWh`,
       meter((v.soc || 0) / 100, "bat")),
+    ...(hasTariff() ? [savingsTile("Ersparnis heute", t)] : []),
   );
+  renderAllSensors(p);
 
   const s = p.status || {};
   kv($("sys-pv"), [
@@ -485,6 +499,7 @@ function updateLiveIndicator() {
   $("live-text").textContent = stale
     ? `keine Daten seit ${age >= 3600 ? `${Math.round(age / 3600)} h` : `${Math.round(age / 60)} min`}`
     : `live · vor ${age} s`;
+  live.title = `Letzte Messung ${timeFmt.format(new Date(lastLive.ts * 1000))}`;
 }
 
 function connectLive() {
@@ -567,6 +582,7 @@ function renderDay() {
     tile("Einspeisung", kwh(t.export_kwh), "kWh"),
     tile("Netzbezug", kwh(t.import_kwh), "kWh"),
     tile("Autarkie", pct(t.self_sufficiency), "%"),
+    ...(hasTariff() ? [savingsTile("Ersparnis", d.totals)] : []),
   );
 }
 
@@ -627,11 +643,14 @@ async function loadHistory() {
       { cls: "load", label: "Verbrauch", value: `${kwh(r.load_kwh)} kWh` },
       { cls: "grid", label: "Einspeisung / Bezug", value: `${kwh(r.export_kwh)} / ${kwh(r.import_kwh)} kWh` },
       { cls: null, label: "Autarkie", value: `${pct(r.self_sufficiency)} %` },
+      ...(hasTariff() ? [{ cls: null, label: "Ersparnis", value: eur(r.savings_eur) }] : []),
     ],
   });
-  table($("hist-table"), ["Zeitraum", "PV (kWh)", "Verbrauch (kWh)", "Einspeisung (kWh)", "Bezug (kWh)", "Autarkie (%)"],
+  table($("hist-table"),
+    ["Zeitraum", "PV (kWh)", "Verbrauch (kWh)", "Einspeisung (kWh)", "Bezug (kWh)", "Autarkie (%)",
+      ...(hasTariff() ? ["Ersparnis (€)"] : [])],
     cats.map((c) => [c.long, kwh(c.row.pv_kwh), kwh(c.row.load_kwh), kwh(c.row.export_kwh), kwh(c.row.import_kwh),
-      pct(c.row.self_sufficiency)]));
+      pct(c.row.self_sufficiency), ...(hasTariff() ? [num(c.row.savings_eur, 2)] : [])]));
 }
 
 function initHistoryTabs() {
@@ -652,6 +671,7 @@ async function loadSummary() {
     if (s.inverter?.model) $("inverter").textContent = `GoodWe ${s.inverter.model}`;
     const rated = Number(s.inverter?.rated_power);
     if (rated > 0) ratedPower = rated;
+    if (s.tariff) tariff = s.tariff;
     const l = s.lifetime || {};
     kv($("sys-life"), [
       ["PV-Ertrag", `${kwh(l.pv_kwh)} kWh`],
@@ -660,7 +680,9 @@ async function loadSummary() {
       ["Netzbezug", `${kwh(l.import_kwh)} kWh`],
       ["Batterie geladen", `${kwh(l.charge_kwh)} kWh`],
       ["Autarkie", `${pct(l.self_sufficiency)} %`],
+      ...(hasTariff() ? [["Ersparnis", eur(l.savings_eur)]] : []),
     ]);
+    if (hasTariff()) loadSavingsCard();
     const r = s.records || {};
     const day = (d) => (d ? dateFmt.format(new Date(`${d}T12:00:00Z`)) : "–");
     kv($("sys-rec"), [
@@ -674,14 +696,47 @@ async function loadSummary() {
   } catch { /* summary is optional */ }
 }
 
+async function loadSavingsCard() {
+  const card = $("savings-card");
+  card.hidden = false;
+  try {
+    const [months, years] = await Promise.all([api("/api/periods?by=month"), api("/api/periods?by=year")]);
+    const now = todayKey();
+    const month = months.periods.find((p) => p.period === now.slice(0, 7));
+    const year = years.periods.find((p) => p.period === now.slice(0, 4));
+    const total = years.periods.reduce((a, p) => a + (p.savings_eur || 0), 0);
+    const first = years.periods[0]?.period;
+    kv($("sys-savings"), [
+      ["Dieser Monat", eur(month?.savings_eur)],
+      ["Dieses Jahr", eur(year?.savings_eur)],
+      [first ? `Seit ${first}` : "Gesamt", eur(total)],
+      ["Tarif", `Bezug ${num(tariff.import_eur_kwh * 100, 1)} ct · Einspeisung ${num(tariff.export_eur_kwh * 100, 1)} ct`],
+    ]);
+  } catch { /* optional */ }
+}
+
+// Labels and units for every raw sensor, fetched once; values then stream in live.
+let sensorMeta = null;
+function renderAllSensors(p) {
+  const details = document.querySelector(".all-sensors");
+  if (!details.open || !p?.all) return;
+  const meta = sensorMeta || {};
+  table($("all-sensors"), ["Messwert", "Wert", "Einheit", "Kennung"],
+    Object.entries(p.all).map(([k, v]) => {
+      const [name, unit] = meta[k] || [k, ""];
+      return [name || k, typeof v === "number" ? num(v, 3) : String(v ?? ""), unit || "", k];
+    }));
+  $("all-sensors-ts").textContent = `Stand ${timeFmt.format(new Date(p.ts * 1000))} · live`;
+}
+
 function initAllSensors() {
   const details = document.querySelector(".all-sensors");
   details.addEventListener("toggle", async () => {
     if (!details.open) return;
     try {
-      const { ts, data } = await api("/api/details");
-      table($("all-sensors"), ["Sensor", `Wert (${timeFmt.format(new Date(ts * 1000))})`],
-        Object.entries(data).map(([k, v]) => [k, typeof v === "number" ? num(v, 3) : String(v ?? "")]));
+      const { ts, data, sensors } = await api("/api/details");
+      sensorMeta = sensors || {};
+      renderAllSensors(lastLive?.all ? lastLive : { ts, all: data });
     } catch {
       $("all-sensors").textContent = "Nicht verfügbar.";
     }

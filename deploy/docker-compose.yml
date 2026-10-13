@@ -13,7 +13,7 @@
 #
 # Host prerequisites (see deploy/README.md):
 #   /srv/solar/data          owned by 10001:10001
-#   /etc/solar/env           SOLAR_INVERTER_HOST=... (root, 0600)
+#   /etc/solar/env           SOLAR_INVERTER_HOST=..., tariff (root, 0600; no secrets)
 #   /etc/solar/tunnel_token  Cloudflare tunnel token (root, 0600)
 #   /etc/solar/cloudflared.yml  tunnel ingress incl. Access audience check
 
@@ -56,8 +56,8 @@ services:
     <<: *hardening
     image: ${SOLAR_IMAGE:?set by image.env}
     command: ["web"]
-    environment:
-      - TZ=Europe/Berlin
+    # Same non-secret settings file as the collector (TZ, tariff for the savings figures).
+    env_file: /etc/solar/env
     volumes:
       # Read-write only because SQLite's WAL needs the -shm file; the app opens
       # the database with mode=ro and has no write path.

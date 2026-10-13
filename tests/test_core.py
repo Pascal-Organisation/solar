@@ -8,7 +8,7 @@ from solar.config import Config
 from solar.db import Store
 from solar.sems import parse_daily, parse_intraday
 from solar.sensors import to_sample
-from solar.web import create_app
+from solar.web import create_app, energy_kpis
 
 TZ = ZoneInfo("Europe/Berlin")
 DAY = date(2026, 6, 1)
@@ -116,15 +116,18 @@ def test_web_api(tmp_path, monkeypatch):
     s.insert_sample(now, sample(), {"battery_mode_label": "Standby", "secret_unlisted": 1})
     s.rollup_5m(now - 600)
     s.rollup_daily(datetime.now(TZ).date())
-    cfg = Config(db_path=db, tz=TZ, inverter_host="", inverter_family=None, poll_interval=10,
-                 raw_retention_days=30, metrics_port=0, web_port=0)
+    # A newer reading than the last stored sample: live values must come from it.
+    s.set_latest(now + 1.5, {"ppv": 1234, "battery_soc": 51})
+    cfg = Config(db_path=db, tz=TZ, inverter_host="", inverter_family=None, poll_interval=2,
+                 store_interval=10, raw_retention_days=30, metrics_port=0, web_port=0,
+                 price_import=0.33, price_export=0.08)
     client = TestClient(create_app(cfg, web_dir=str(tmp_path / "none")))
 
     r = client.get("/api/live")
     assert r.status_code == 200
     body = r.json()
-    assert body["values"]["pv_w"] == 1000.0 and not body["stale"]
-    assert body["status"] == {"battery_mode_label": "Standby"}
+    assert body["values"]["pv_w"] == 1234.0 and body["values"]["soc"] == 51.0 and not body["stale"]
+    assert "all" not in body
     assert "default-src 'self'" in r.headers["content-security-policy"]
     assert r.headers["cache-control"] == "no-store"
 
@@ -132,4 +135,17 @@ def test_web_api(tmp_path, monkeypatch):
     assert client.get("/api/day").json()["series"]
     assert client.get("/api/days", params={"from": "2026-01-01", "to": "2027-12-31"}).status_code == 400
     assert client.get("/api/periods", params={"by": "week"}).status_code == 422
-    assert client.get("/api/summary").json()["lifetime"]["pv_kwh"] == 100.0
+    summary = client.get("/api/summary").json()
+    assert summary["lifetime"]["pv_kwh"] == 100.0
+    assert summary["tariff"] == {"import_eur_kwh": 0.33, "export_eur_kwh": 0.08}
+    assert "savings_eur" in client.get("/api/day").json()["totals"]
+
+
+def test_savings_formula():
+    k = energy_kpis({"pv_kwh": 30.0, "load_kwh": 15.0, "import_kwh": 3.0, "export_kwh": 16.0}, 0.33, 0.08)
+    assert k["avoided_eur"] == pytest.approx(12 * 0.33, abs=0.01)   # 12 kWh not bought
+    assert k["feed_in_eur"] == pytest.approx(16 * 0.08, abs=0.01)
+    assert k["savings_eur"] == pytest.approx(3.96 + 1.28, abs=0.01)
+    # savings == bill without plant - actual net bill
+    assert k["savings_eur"] == pytest.approx(15 * 0.33 - k["cost_eur"], abs=0.01)
+    assert "savings_eur" not in energy_kpis({"load_kwh": 1.0, "import_kwh": 1.0})

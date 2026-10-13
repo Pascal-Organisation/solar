@@ -1,7 +1,7 @@
 # solar
 
 A local-first dashboard for a **GoodWe hybrid inverter** (PV + battery + smart meter).
-It reads the inverter directly over the LAN every 10 seconds — no vendor cloud, no
+It reads the inverter directly over the LAN every 2 seconds — no vendor cloud, no
 SEMS app — stores the data in SQLite, and serves a fast, private web dashboard.
 
 ![Dashboard (synthetic demo data)](docs/screenshot.jpg)
@@ -12,6 +12,9 @@ SEMS app — stores the data in SQLite, and serves a fast, private web dashboard
   using the [`goodwe`](https://github.com/marcelblijleven/goodwe) library — PV strings,
   three grid phases, house load, battery SoC/SoH/power, smart-meter import/export and
   all lifetime counters. Strictly read-only: no setting is ever written.
+- **Live every 2 s** (configurable down to 1 s — the Wi-Fi dongle handled that without a
+  single dropped frame in testing), streamed to the browser via server-sent events,
+  including a live table of all raw values with names and units.
 - **Stores three tiers**: raw 10 s samples (30 days), 5-minute averages and daily
   energy (forever). Daily energy is the delta of the inverter's lifetime counters, so
   missed polls never lose energy.
@@ -21,6 +24,8 @@ SEMS app — stores the data in SQLite, and serves a fast, private web dashboard
   and self-consumption, day curves with crosshair tooltips, monthly/yearly history,
   per-string / per-phase / battery details. Dependency-free JavaScript under a strict
   Content-Security-Policy; light and dark mode; works on a phone.
+- **Savings in euros** from a configurable tariff: avoided grid purchases plus feed-in
+  revenue — per day, month, year and lifetime.
 - **Prometheus metrics** for every sensor, so an existing Grafana can use them too.
 
 ## Architecture
@@ -86,7 +91,9 @@ Production setup (LXC, firewall, tunnel, timers, history import):
 |---|---|---|
 | `SOLAR_INVERTER_HOST` | — | inverter / dongle IP |
 | `SOLAR_INVERTER_FAMILY` | auto | e.g. `ET` to skip detection |
-| `SOLAR_POLL_INTERVAL` | `10` | seconds |
+| `SOLAR_POLL_INTERVAL` | `2` | live refresh, seconds |
+| `SOLAR_STORE_INTERVAL` | `10` | raw history resolution, seconds |
+| `SOLAR_PRICE_IMPORT` / `SOLAR_PRICE_EXPORT` | `0` | EUR/kWh for the savings figures (0 hides them) |
 | `SOLAR_RAW_RETENTION_DAYS` | `30` | raw sample retention |
 | `SOLAR_DB` | `/data/solar.db` | |
 | `SOLAR_METRICS_PORT` / `SOLAR_WEB_PORT` | `9108` / `8080` | |

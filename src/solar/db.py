@@ -81,7 +81,7 @@ class Store:
 
     # ---------------------------------------------------------------- writes
 
-    def insert_sample(self, ts: int, row: dict[str, float | None], full: dict[str, Any]) -> None:
+    def insert_sample(self, ts: int, row: dict[str, float | None], full: dict[str, Any] | None = None) -> None:
         cols = list(SAMPLE_COLUMNS)
         with self.conn:
             self.conn.execute(
@@ -89,11 +89,20 @@ class Store:
                 f"VALUES (?, {', '.join('?' for _ in cols)})",
                 [ts, *(row.get(c) for c in cols)],
             )
-            self.conn.execute(
-                "INSERT INTO latest (id, ts, data) VALUES (1, ?, ?) "
-                "ON CONFLICT(id) DO UPDATE SET ts = excluded.ts, data = excluded.data",
-                (ts, json.dumps(full, separators=(",", ":"))),
-            )
+            if full is not None:
+                self._set_latest(ts, full)
+
+    def set_latest(self, ts: float, full: dict[str, Any]) -> None:
+        """The newest complete reading; updated on every poll, unlike `samples`."""
+        with self.conn:
+            self._set_latest(ts, full)
+
+    def _set_latest(self, ts: float, full: dict[str, Any]) -> None:
+        self.conn.execute(
+            "INSERT INTO latest (id, ts, data) VALUES (1, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET ts = excluded.ts, data = excluded.data",
+            (ts, json.dumps(full, separators=(",", ":"))),
+        )
 
     def rollup_5m(self, since: int) -> None:
         """(Re)build local 5-minute buckets from raw samples at or after `since`."""

@@ -132,9 +132,9 @@ section { display: grid; gap: 12px; }
 .k-pv { stroke: var(--c-pv); } .k-load { stroke: var(--c-load); } .k-bat { stroke: var(--c-bat); } .k-grid { stroke: var(--c-grid); }
 @media (prefers-reduced-motion: reduce) { .flow-dash.on, .live[data-state="ok"] .live-dot { animation: none; } .flow-dash { stroke-dasharray: none; } }
 
-.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-.tiles-compact { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@media (max-width: 1000px) { .tiles, .tiles-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tiles-compact { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .tiles-compact { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .tiles, .tiles-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tile { display: flex; flex-direction: column; gap: .25rem; }
 .tile .value { font-size: 1.75rem; font-weight: 620; letter-spacing: -.02em; line-height: 1.15; }
