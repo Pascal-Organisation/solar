@@ -794,15 +794,13 @@ async function renderTotals(s) {
 
   $("total-value").textContent = num(l.savings_eur, 0);
   $("total-split").textContent = `${eur(l.avoided_eur)} gespart + ${eur(l.feed_in_eur)} Einspeisevergütung`;
-  const paid = (l.import_kwh ?? 0) * tariff.import_eur_kwh;
-  const net = paid - (l.feed_in_eur ?? 0);
+  // Average gain per month since the first day on record (≈ commissioning).
+  const months = s.first_day ? (Date.now() - Date.parse(`${s.first_day}T00:00:00Z`)) / (30.44 * 86400e3) : 0;
   $("total-money").replaceChildren(
     ...ledgerRow("Gespart durch Eigenverbrauch", `+ ${eur(l.avoided_eur)}`),
     ...ledgerRow("Einspeisevergütung", `+ ${eur(l.feed_in_eur)}`),
     ...ledgerRow("Gesamtnutzen", eur(l.savings_eur), "sum"),
-    ...ledgerRow("Netzstrom bezahlt", `− ${eur(paid)}`),
-    ...ledgerRow(net <= 0 ? "Strom unterm Strich: Überschuss" : "Strom unterm Strich: Kosten",
-      eur(Math.abs(net)), `sum ${net <= 0 ? "status-ok" : ""}`),
+    ...(months >= 1 ? ledgerRow("Unterm Strich: Gewinn pro Monat", `Ø ${eur(l.savings_eur / months)}`, "sum status-ok") : []),
   );
   $("total-tariff").textContent =
     `Tarif: ${num(tariff.import_eur_kwh * 100, 1)} ct/kWh Bezug, ${num(tariff.export_eur_kwh * 100, 1)} ct/kWh Einspeisung `
