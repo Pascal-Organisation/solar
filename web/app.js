@@ -741,31 +741,73 @@ async function loadSummary() {
 
 // All-time balance. The inverter's own lifetime counters are authoritative (they
 // include everything since commissioning); the stored days are the fallback.
+
+// One horizontal bar split into two parts, labelled underneath (never colour alone).
+function splitBar(title, total, parts) {
+  const bar = el("div", { class: "splitbar", role: "img",
+    "aria-label": `${title}: ${parts.map((p) => `${p.label} ${kwh(p.value)} kWh`).join(", ")}` });
+  const legendRow = el("div", { class: "split-legend" });
+  for (const p of parts) {
+    const share = total > 0 ? Math.max(0, Math.min(1, p.value / total)) : 0;
+    const seg = el("span", { class: `seg bg-${p.cls}` });
+    seg.style.width = `${share * 100}%`;
+    bar.append(seg);
+    legendRow.append(el("div", { class: "split-item" },
+      el("span", { class: `key-rect bg-${p.cls}` }),
+      el("span", { class: "split-label" }, p.label),
+      el("strong", {}, `${kwh(p.value)} kWh`),
+      el("span", { class: "muted" }, `${pct(share)} %`)));
+  }
+  return el("div", { class: "split" },
+    el("div", { class: "split-head" }, el("span", {}, title), el("strong", {}, `${kwh(total)} kWh`)),
+    bar, legendRow);
+}
+
+function ledgerRow(label, value, cls = "") {
+  return [el("dt", { class: cls }, label), el("dd", { class: cls }, value)];
+}
+
 async function renderTotals(s) {
   const l = s.lifetime?.pv_kwh ? s.lifetime : s.totals;
   if (!l) return;
   const since = s.first_day ? dateFmt.format(new Date(`${s.first_day}T12:00:00Z`)) : null;
   $("total-sub").textContent = s.lifetime?.pv_kwh
-    ? "seit Inbetriebnahme, laut Zählern des Wechselrichters"
+    ? "seit Inbetriebnahme · Zähler des Wechselrichters"
     : (since ? `seit ${since}` : "");
-  const priced = hasTariff();
-  $("total-tiles").replaceChildren(
-    tile("Erzeugt", kwh(l.pv_kwh), "kWh", "PV-Ertrag gesamt"),
-    tile("Verbraucht", kwh(l.load_kwh), "kWh", "Hausverbrauch gesamt"),
-    tile("Eigenverbrauch", kwh(l.self_consumed_kwh), "kWh", `${pct(l.self_consumption)} % des PV-Stroms selbst genutzt`),
-    tile("Autarkie", pct(l.self_sufficiency), "%", "Verbrauch ohne Netzbezug"),
-    tile("Einspeisung", kwh(l.export_kwh), "kWh", priced ? `${eur(l.feed_in_eur)} Vergütung` : null),
-    tile("Netzbezug", kwh(l.import_kwh), "kWh", priced ? `${eur(l.import_kwh * tariff.import_eur_kwh)} bezahlt` : null),
-    ...(priced ? [
-      tile("Gespart durch Eigenverbrauch", num(l.avoided_eur, 0), "€", "nicht gekaufter Netzstrom"),
-      tile("Einspeisevergütung", num(l.feed_in_eur, 0), "€", "für eingespeisten Strom"),
-    ] : []),
+
+  const fromPv = Math.max(0, (l.load_kwh ?? 0) - (l.import_kwh ?? 0));
+  $("total-energy").replaceChildren(
+    splitBar("Wohin ging der Solarstrom?", l.pv_kwh, [
+      { label: "selbst genutzt", value: l.self_consumed_kwh ?? 0, cls: "load" },
+      { label: "eingespeist", value: l.export_kwh ?? 0, cls: "grid" },
+    ]),
+    splitBar("Woher kam der Strom im Haus?", l.load_kwh, [
+      { label: "aus PV & Batterie (Autarkie)", value: fromPv, cls: "pv" },
+      { label: "aus dem Netz", value: l.import_kwh ?? 0, cls: "grid" },
+    ]),
   );
-  const hero = $("total-hero");
-  hero.hidden = !priced;
+
+  const priced = hasTariff();
+  $("total-hero").hidden = !priced;
+  $("total-money-card").hidden = !priced;
   if (!priced) return;
+
   $("total-value").textContent = num(l.savings_eur, 0);
-  $("total-split").textContent = `${eur(l.avoided_eur)} Eigenverbrauch + ${eur(l.feed_in_eur)} Einspeisung`;
+  $("total-split").textContent = `${eur(l.avoided_eur)} gespart + ${eur(l.feed_in_eur)} Einspeisevergütung`;
+  const paid = (l.import_kwh ?? 0) * tariff.import_eur_kwh;
+  const net = paid - (l.feed_in_eur ?? 0);
+  $("total-money").replaceChildren(
+    ...ledgerRow("Gespart durch Eigenverbrauch", `+ ${eur(l.avoided_eur)}`),
+    ...ledgerRow("Einspeisevergütung", `+ ${eur(l.feed_in_eur)}`),
+    ...ledgerRow("Gesamtnutzen", eur(l.savings_eur), "sum"),
+    ...ledgerRow("Netzstrom bezahlt", `− ${eur(paid)}`),
+    ...ledgerRow(net <= 0 ? "Strom unterm Strich: Überschuss" : "Strom unterm Strich: Kosten",
+      eur(Math.abs(net)), `sum ${net <= 0 ? "status-ok" : ""}`),
+  );
+  $("total-tariff").textContent =
+    `Tarif: ${num(tariff.import_eur_kwh * 100, 1)} ct/kWh Bezug, ${num(tariff.export_eur_kwh * 100, 1)} ct/kWh Einspeisung `
+    + "(für alle Zeiträume angewendet).";
+
   try {
     const [months, years] = await Promise.all([api("/api/periods?by=month"), api("/api/periods?by=year")]);
     const now = todayKey();
@@ -773,12 +815,13 @@ async function renderTotals(s) {
     const year = years.periods.find((p) => p.period === now.slice(0, 4));
     const full = years.periods.filter((p) => p.days >= 360);
     const perYear = full.length ? full.reduce((a, p) => a + (p.savings_eur || 0), 0) / full.length : null;
-    kv($("total-periods"), [
-      ["Dieses Jahr", eur(year?.savings_eur)],
-      ["Dieser Monat", eur(month?.savings_eur)],
-      ...(perYear ? [["Ø pro volles Jahr", eur(perYear)]] : []),
-      ["Tarif", `${num(tariff.import_eur_kwh * 100, 1)} ct Bezug · ${num(tariff.export_eur_kwh * 100, 1)} ct Einspeisung`],
-    ]);
+    const stat = (label, v) => el("div", { class: "period-stat" },
+      el("span", { class: "label" }, label), el("strong", {}, eur(v)));
+    $("total-periods").replaceChildren(
+      stat(`Jahr ${now.slice(0, 4)}`, year?.savings_eur),
+      stat(monthLongFmt.format(new Date(`${now.slice(0, 7)}-15T00:00:00Z`)), month?.savings_eur),
+      ...(perYear ? [stat("Ø pro volles Jahr", perYear)] : []),
+    );
   } catch { /* optional */ }
 }
 
