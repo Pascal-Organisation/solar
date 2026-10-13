@@ -18,10 +18,10 @@ def ts(hour: int, minute: int = 0, day: date = DAY) -> int:
     return int(datetime.combine(day, time(hour, minute), TZ).timestamp())
 
 
-def sample(pv=1000.0, load=500.0, grid=400.0, battery=-100.0, e_pv=100.0, e_exp=50.0, **kw):
+def sample(pv=1000.0, load=500.0, grid=400.0, battery=-100.0, e_pv=100.0, e_exp=50.0, e_imp=10.0, **kw):
     row = {k: None for k in to_sample({})}
     row.update(pv_w=pv, load_w=load, grid_w=grid, battery_w=battery, soc=50.0,
-               e_pv_total=e_pv, e_load_total=200.0, e_export_total=e_exp, e_import_total=10.0,
+               e_pv_total=e_pv, e_load_total=200.0, e_export_total=e_exp, e_import_total=e_imp,
                e_charge_total=30.0, e_discharge_total=20.0)
     row.update(kw)
     return row
@@ -75,6 +75,35 @@ def test_partial_local_day_does_not_clobber_import(store):
     store.rollup_daily(DAY)
     (row,) = store.daily_range(DAY, DAY)
     assert row["pv_kwh"] == 42.0 and row["source"] == "sems"
+
+
+def test_first_day_completed_from_inverter_day_counters(store):
+    # Collector started at 10:00 - no midnight baseline. The lifetime delta would
+    # only see 10:00-18:00; the inverter's "today" counters know the whole day.
+    # Before 10:00: pv 1, load 4, charge 0, discharge 1 -> net -2 kWh = imported.
+    store.insert_sample(ts(10), sample(e_pv=100.0, e_imp=10.0, e_pv_day=1.0, e_load_day=4.0,
+                                       e_charge_day=0.0, e_discharge_day=1.0), {})
+    store.insert_sample(ts(18), sample(e_pv=110.0, e_imp=10.5, e_pv_day=11.0, e_load_day=9.5,
+                                       e_charge_day=2.0, e_discharge_day=1.0), {})
+    store.rollup_daily(DAY)
+    (row,) = store.daily_range(DAY, DAY)
+    assert row["pv_kwh"] == pytest.approx(11.0)
+    assert row["load_kwh"] == pytest.approx(9.5)
+    assert row["import_kwh"] == pytest.approx(0.5 + 2.0)  # measured window + balance before it
+    assert row["coverage"] == pytest.approx(8 / 24, abs=0.01)  # still partial: import may replace it
+
+
+def test_migration_adds_new_sample_columns(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE samples (ts INTEGER PRIMARY KEY, pv_w REAL)")
+    old.commit()
+    old.close()
+    s = Store(path, TZ)
+    cols = {r["name"] for r in s.conn.execute("PRAGMA table_info(samples)")}
+    assert {"e_pv_day", "e_discharge_day", "soc"} <= cols
 
 
 def test_import_never_overwrites_local(store):

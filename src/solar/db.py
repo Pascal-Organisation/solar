@@ -18,7 +18,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .sensors import COUNTERS, SAMPLE_COLUMNS
+from .sensors import COUNTERS, DAY_COUNTERS, SAMPLE_COLUMNS
 
 BUCKET = 300
 # A counter baseline taken this long before midnight still counts as "at midnight".
@@ -75,6 +75,15 @@ class Store:
             self.conn.execute("PRAGMA journal_mode = WAL")
             self.conn.execute("PRAGMA synchronous = NORMAL")
             self.conn.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """Add sample columns introduced after a database was created."""
+        have = {r["name"] for r in self.conn.execute("PRAGMA table_info(samples)")}
+        with self.conn:
+            for column in SAMPLE_COLUMNS:
+                if column not in have:
+                    self.conn.execute(f"ALTER TABLE samples ADD COLUMN {column} REAL")
 
     def close(self) -> None:
         self.conn.close()
@@ -149,11 +158,34 @@ class Store:
             "ORDER BY ts DESC LIMIT 1",
             (start, start - BASELINE_SLACK),
         ).fetchone()
+        # Without a reading from just before midnight, the lifetime-counter delta
+        # misses everything before the first sample. The inverter's own "today"
+        # counters start at midnight, so they complete PV, load and battery.
+        day_values: dict[str, float] = {}
+        before_first: dict[str, float] = {}
+        if baseline is None:
+            first_dc = self.conn.execute(
+                f"SELECT {', '.join(DAY_COUNTERS.values())} FROM samples "
+                f"WHERE ts >= ? AND ts < ? AND {DAY_COUNTERS['pv_kwh']} IS NOT NULL ORDER BY ts LIMIT 1",
+                (start, end),
+            ).fetchone()
+            if first_dc is not None:
+                for energy_col, counter in DAY_COUNTERS.items():
+                    row = self.conn.execute(
+                        f"SELECT max({counter}) AS v FROM samples WHERE ts >= ? AND ts < ?", (start, end)
+                    ).fetchone()
+                    if row["v"] is not None:
+                        day_values[energy_col] = round(row["v"], 3)
+                    before_first[energy_col] = first_dc[counter] or 0.0
+        # Partial days stay "partial" so a complete import can still replace them.
         first_ts = start if baseline is not None else span["first"]
         coverage = min(1.0, (span["last"] - first_ts) / (end - start))
 
         values: dict[str, float | None] = {}
         for energy_col, counter in COUNTERS.items():
+            if energy_col in day_values:
+                values[energy_col] = day_values[energy_col]
+                continue
             # Counters read as 0 on a garbled frame; ignore those outright.
             agg = self.conn.execute(
                 f"SELECT min({counter}) AS lo, max({counter}) AS hi FROM samples "
@@ -165,6 +197,15 @@ class Store:
                 lo = baseline[counter] if lo is None else min(lo, baseline[counter])
             delta = None if lo is None or hi is None else round(hi - lo, 3)
             values[energy_col] = delta if delta is not None and 0 <= delta <= MAX_DAILY_KWH else None
+        if before_first and len(before_first) == len(DAY_COUNTERS):
+            # Grid energy before the first sample, by balance:
+            # export - import = pv + discharge - charge - load (inverter losses ignored)
+            b = before_first
+            net = b["pv_kwh"] + b["discharge_kwh"] - b["charge_kwh"] - b["load_kwh"]
+            if values.get("export_kwh") is not None and net > 0:
+                values["export_kwh"] = round(values["export_kwh"] + net, 3)
+            if values.get("import_kwh") is not None and net < 0:
+                values["import_kwh"] = round(values["import_kwh"] - net, 3)
         values["pv_peak_w"] = span["peak"]
 
         cols = list(DAILY_COLUMNS)
