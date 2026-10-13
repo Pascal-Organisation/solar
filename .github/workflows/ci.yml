@@ -35,7 +35,7 @@ jobs:
           docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src:ro" -w /src "$PYTHON_IMAGE" sh -euc '
             python -m venv /tmp/v
             /tmp/v/bin/pip install -q --require-hashes --no-deps -r requirements.lock
-            /tmp/v/bin/pip install -q pytest==8.4.2 ruff==0.13.3
+            /tmp/v/bin/pip install -q pytest==9.1.1 ruff==0.17.0
             /tmp/v/bin/ruff check --no-cache src tests tools
             /tmp/v/bin/python -m pytest -q -p no:cacheprovider
           '
