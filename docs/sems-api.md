@@ -21,6 +21,9 @@ Error codes: `100002` / `C0602` → log in again once; `GY0429` or HTTP 429 → 
 off ≥ 5 min. The importer paces requests at one per 5 s and stores a resume cursor
 in the database.
 
-Units and signs of the intraday items are not documented. `solar sems-probe` fetches
+Units and signs of the intraday items are not documented. Verified against a
+GW8K-ET (2026-10): powers are kW at 1-minute resolution, `pGrid` > 0 is export and
+`pBat` > 0 is discharge — the same convention as the local data, and
+`pSystem + pBat - pGrid` matches `pConsum` within 0.1 kWh/day. `solar sems-probe` fetches
 one day and compares it bucket-by-bucket with locally measured data before a full
 import; `SEMS_POWER_SCALE`, `SEMS_GRID_SIGN` and `SEMS_BATTERY_SIGN` correct them.
