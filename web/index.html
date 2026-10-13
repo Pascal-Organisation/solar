@@ -49,6 +49,22 @@
       <div class="tiles" id="tiles"></div>
     </section>
 
+    <section aria-labelledby="total-h">
+      <div class="section-head">
+        <h2 id="total-h">Gesamtbilanz</h2>
+        <p class="muted small" id="total-sub"></p>
+      </div>
+      <div class="totals">
+        <div class="card total-hero" id="total-hero" hidden>
+          <p class="label">Gesamtnutzen der PV-Anlage</p>
+          <p class="hero-value"><span id="total-value">–</span><span class="unit">€</span></p>
+          <p class="hero-sub" id="total-split"></p>
+          <dl class="kv" id="total-periods"></dl>
+        </div>
+        <div class="tiles tiles-total" id="total-tiles"></div>
+      </div>
+    </section>
+
     <section aria-labelledby="day-h">
       <div class="section-head">
         <h2 id="day-h">Tagesverlauf</h2>
@@ -79,7 +95,7 @@
 
     <section aria-labelledby="hist-h">
       <div class="section-head">
-        <h2 id="hist-h">Verlauf</h2>
+        <div class="hist-title"><h2 id="hist-h">Verlauf</h2><span id="hist-crumb"></span></div>
         <div class="segmented" role="tablist" aria-label="Zeitraum">
           <button type="button" role="tab" data-range="days" aria-selected="true">30 Tage</button>
           <button type="button" role="tab" data-range="month" aria-selected="false">Monate</button>
@@ -103,9 +119,7 @@
         <div class="card"><h3>Netz</h3><dl class="kv" id="sys-grid"></dl></div>
         <div class="card"><h3>Batterie</h3><dl class="kv" id="sys-bat"></dl></div>
         <div class="card"><h3>Wechselrichter</h3><dl class="kv" id="sys-inv"></dl></div>
-        <div class="card"><h3>Gesamt seit Inbetriebnahme</h3><dl class="kv" id="sys-life"></dl></div>
         <div class="card"><h3>Rekorde</h3><dl class="kv" id="sys-rec"></dl></div>
-        <div class="card" id="savings-card" hidden><h3>Ersparnis</h3><dl class="kv" id="sys-savings"></dl></div>
       </div>
       <details class="card all-sensors">
         <summary>Alle Messwerte <span class="muted" id="all-sensors-ts"></span></summary>

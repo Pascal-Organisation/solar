@@ -138,6 +138,8 @@ def test_web_api(tmp_path, monkeypatch):
     summary = client.get("/api/summary").json()
     assert summary["lifetime"]["pv_kwh"] == 100.0
     assert summary["tariff"] == {"import_eur_kwh": 0.33, "export_eur_kwh": 0.08}
+    assert summary["totals"]["days"] == 1 and "savings_eur" in summary["totals"]
+    assert summary["curves_from"] == datetime.now(TZ).date().isoformat()
     assert "savings_eur" in client.get("/api/day").json()["totals"]
 
 
@@ -148,4 +150,5 @@ def test_savings_formula():
     assert k["savings_eur"] == pytest.approx(3.96 + 1.28, abs=0.01)
     # savings == bill without plant - actual net bill
     assert k["savings_eur"] == pytest.approx(15 * 0.33 - k["cost_eur"], abs=0.01)
+    assert k["self_consumed_kwh"] == 14.0
     assert "savings_eur" not in energy_kpis({"load_kwh": 1.0, "import_kwh": 1.0})
