@@ -20,7 +20,7 @@ dev = ["pytest==8.4.2", "ruff==0.13.3"]
 solar = "solar.__main__:main"
 
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
