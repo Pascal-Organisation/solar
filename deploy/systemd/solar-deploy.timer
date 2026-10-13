@@ -1,0 +1,11 @@
+[Unit]
+Description=solar: poll GHCR for a new signed image every 10 minutes
+
+[Timer]
+# Wall-clock based so a reboot can never wedge the timer.
+OnCalendar=*:0/10
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

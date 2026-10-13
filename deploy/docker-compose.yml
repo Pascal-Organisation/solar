@@ -1,0 +1,105 @@
+# Production compose. Lives on the host at /srv/solar/docker-compose.yml and is
+# synced from the verified image by solar-deploy.sh on every release.
+#
+# No `build:` key on purpose: the host only runs the exact image CI built, scanned
+# and signed, pinned by digest via image.env:
+#   docker compose --env-file image.env up -d
+#
+# Network layout (least privilege):
+#   collector  -> egress   : needs UDP to the inverter on the LAN; publishes :9108
+#                            metrics (the Proxmox firewall admits only Prometheus)
+#   web        -> edge     : internal-only network, no internet, no LAN port
+#   cloudflared-> edge+egress : the single path in from the outside
+#
+# Host prerequisites (see deploy/README.md):
+#   /srv/solar/data          owned by 10001:10001
+#   /etc/solar/env           SOLAR_INVERTER_HOST=... (root, 0600)
+#   /etc/solar/tunnel_token  Cloudflare tunnel token (root, 0600)
+#   /etc/solar/cloudflared.yml  tunnel ingress incl. Access audience check
+
+x-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  collector:
+    <<: *hardening
+    image: ${SOLAR_IMAGE:?set by image.env}
+    command: ["collect"]
+    env_file: /etc/solar/env
+    volumes:
+      - /srv/solar/data:/data
+    networks: [egress]
+    ports:
+      - "9108:9108"
+    mem_limit: 256m
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python", "-m", "solar", "healthcheck", "collector"]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  web:
+    <<: *hardening
+    image: ${SOLAR_IMAGE:?set by image.env}
+    command: ["web"]
+    environment:
+      - TZ=Europe/Berlin
+    volumes:
+      # Read-write only because SQLite's WAL needs the -shm file; the app opens
+      # the database with mode=ro and has no write path.
+      - /srv/solar/data:/data
+    networks: [edge]
+    mem_limit: 256m
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python", "-m", "solar", "healthcheck", "web"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  cloudflared:
+    <<: *hardening
+    image: cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --config
+      - /etc/cloudflared/config.yml
+      - run
+      - --token-file
+      - /run/secrets/tunnel_token
+    user: "65532:65532"
+    volumes:
+      - /etc/solar/cloudflared.yml:/etc/cloudflared/config.yml:ro
+    secrets:
+      - tunnel_token
+    networks: [edge, egress]
+    depends_on:
+      web:
+        condition: service_started
+    mem_limit: 128m
+    pids_limit: 64
+
+secrets:
+  tunnel_token:
+    file: /etc/solar/tunnel_token
+
+networks:
+  edge:
+    internal: true
+  egress: {}

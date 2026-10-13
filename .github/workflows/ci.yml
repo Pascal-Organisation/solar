@@ -1,0 +1,50 @@
+name: CI
+
+# Public repository: everything runs on GitHub-hosted runners. Self-hosted runners
+# must never execute workflows that a fork's pull request can trigger.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main] # main is gated by release.yml, which calls this workflow
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_IMAGE: python:3.13-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+
+jobs:
+  test:
+    name: Lint & test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Tests run inside the same pinned Python image the release uses, with the
+      # hash-locked runtime dependencies — no setup-python action needed.
+      - name: Ruff and pytest
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src:ro" -w /src "$PYTHON_IMAGE" sh -euc '
+            python -m venv /tmp/v
+            /tmp/v/bin/pip install -q --require-hashes --no-deps -r requirements.lock
+            /tmp/v/bin/pip install -q pytest==8.4.2 ruff==0.13.3
+            /tmp/v/bin/ruff check --no-cache src tests tools
+            /tmp/v/bin/python -m pytest -q -p no:cacheprovider
+          '
+
+      - name: Frontend syntax check
+        run: node --check web/app.js
+
+      - name: Shell scripts
+        run: shellcheck deploy/*.sh
+
+      - name: Image builds
+        run: docker build -t solar-ci .

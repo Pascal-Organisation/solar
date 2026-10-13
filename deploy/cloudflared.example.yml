@@ -1,0 +1,14 @@
+# /etc/solar/cloudflared.yml — ingress for the tunnel.
+# cloudflared validates the Cloudflare Access JWT itself, so a request without a
+# valid Access session never reaches the web container — even if someone
+# bypasses Access at the edge.
+ingress:
+  - hostname: solar.example.com
+    service: http://web:8080
+    originRequest:
+      access:
+        required: true
+        teamName: your-team
+        audTag:
+          - <access-application-aud>
+  - service: http_status:404
