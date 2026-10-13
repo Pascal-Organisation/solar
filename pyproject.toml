@@ -40,3 +40,6 @@ pythonpath = ["src"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/*" = ["S311"]
