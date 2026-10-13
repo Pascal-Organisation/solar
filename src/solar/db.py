@@ -273,6 +273,17 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def first_curve_ts(self) -> int | None:
+        """Oldest 5-minute bucket with PV data (SEMS keeps curves for a limited time only)."""
+        row = self.conn.execute("SELECT min(ts) AS t FROM samples_5m WHERE pv_w IS NOT NULL").fetchone()
+        return row["t"] if row else None
+
+    def totals(self) -> dict[str, Any]:
+        """Energy summed over every stored day."""
+        sums = ", ".join(f"round(sum({c}), 3) AS {c}" for c in COUNTERS)
+        row = self.conn.execute(f"SELECT {sums}, count(*) AS days, min(day) AS first_day FROM daily").fetchone()
+        return dict(row)
+
     def first_day(self) -> str | None:
         row = self.conn.execute("SELECT min(day) AS d FROM daily").fetchone()
         return row["d"] if row else None

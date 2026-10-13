@@ -311,6 +311,13 @@ function drawBarChart(container, o) {
     hit.addEventListener("pointerleave", hide);
     hit.addEventListener("focus", () => { const b = hit.getBoundingClientRect(); show(b.left + b.width / 2, b.top + 20); });
     hit.addEventListener("blur", hide);
+    if (o.onSelect) {
+      hit.classList.add("selectable");
+      hit.addEventListener("click", () => o.onSelect(c));
+      hit.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); o.onSelect(c); }
+      });
+    }
   });
   container.replaceChildren(root);
   if (!o.cats.length) container.append(el("div", { class: "empty" }, "Noch keine Verlaufsdaten"));
@@ -563,6 +570,7 @@ function renderDay() {
   lineChart($("power-chart"), {
     ...common, series: DAY_SERIES, hidden: dayState.hidden, ariaLabel: "Leistungsverlauf des Tages",
     format: (v) => num(v / 1000, 1), tipFormat: (v) => power(v),
+    emptyText: d.totals ? "Keine Leistungskurve für diesen Tag – Tageswerte siehe unten" : "Keine Daten für diesen Tag",
   });
   lineChart($("soc-chart"), {
     ...common, series: [{ key: "soc", cls: "bat", label: "Ladestand" }], fixed: [0, 100],
@@ -570,7 +578,11 @@ function renderDay() {
     emptyText: " ",
   });
   const sems = rows.some((r) => r.source === "sems");
-  $("day-note").textContent = sems ? "Historische Daten aus dem SEMS-Portal importiert." : "";
+  const noCurve = !rows.length && d.totals;
+  $("day-note").textContent = noCurve
+    ? "Für diesen Tag gibt es nur Tageswerte (unten). GoodWe speichert Leistungskurven nur begrenzt – "
+      + `verfügbar ab ${curvesFrom ? dateFmt.format(new Date(`${curvesFrom}T12:00:00Z`)) : "–"}.`
+    : sems ? "Historische Daten aus dem SEMS-Portal importiert." : "";
   table($("power-table"), ["Zeit", "PV (W)", "Verbrauch (W)", "Batterie (W)", "Netz (W)", "SoC (%)"],
     rows.map((r) => [timeFmt.format(new Date(r.ts * 1000)), num(r.pv, 0), num(r.load, 0), num(r.bat, 0),
       num(r.grid, 0), num(r.soc, 0)]));
@@ -604,40 +616,51 @@ const HIST_SERIES = [
   { key: "pv_kwh", cls: "pv", label: "PV-Ertrag" },
 ];
 const monthFmt = new Intl.DateTimeFormat(LOCALE, { month: "short", year: "2-digit", timeZone: "UTC" });
+const monthShortFmt = new Intl.DateTimeFormat(LOCALE, { month: "short", timeZone: "UTC" });
 const monthLongFmt = new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric", timeZone: "UTC" });
-let histRange = "days";
+// range: "days" | "month" | "year"; scope narrows it after a drill-down ("2025" or "2025-06").
+const hist = { range: "days", scope: null };
+
+function monthEnd(ym) {
+  const d = new Date(`${ym}-01T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1, 0);
+  return d.toISOString().slice(0, 10);
+}
 
 async function loadHistory() {
   const chart = $("hist-chart");
   chart.classList.add("loading");
   let cats = [];
   try {
-    if (histRange === "days") {
-      const to = todayKey(), from = shiftDay(to, -29);
+    if (hist.range === "days") {
+      const to = hist.scope ? monthEnd(hist.scope) : todayKey();
+      const from = hist.scope ? `${hist.scope}-01` : shiftDay(to, -29);
       const { days } = await api(`/api/days?from=${from}&to=${to}`);
       const byDay = Object.fromEntries(days.map((d) => [d.day, d]));
-      for (let k = from; k <= to; k = shiftDay(k, 1)) {
-        const row = byDay[k] || {};
-        cats.push({ key: k, label: `${Number(k.slice(8))}.`, long: dateFmt.format(new Date(`${k}T12:00:00Z`)), row });
+      for (let k = from; k <= to && k <= todayKey(); k = shiftDay(k, 1)) {
+        cats.push({ key: k, kind: "day", label: `${Number(k.slice(8))}.`,
+          long: dateFmt.format(new Date(`${k}T12:00:00Z`)), row: byDay[k] || {} });
       }
     } else {
-      const { periods } = await api(`/api/periods?by=${histRange}`);
-      const list = histRange === "month" ? periods.slice(-24) : periods;
+      const { periods } = await api(`/api/periods?by=${hist.range}`);
+      let list = periods;
+      if (hist.range === "month") {
+        list = hist.scope ? periods.filter((p) => p.period.startsWith(hist.scope)) : periods.slice(-24);
+      }
       cats = list.map((p) => {
-        const d = new Date(`${p.period}${histRange === "month" ? "-15" : "-07-01"}T00:00:00Z`);
-        return {
-          key: p.period, row: p,
-          label: histRange === "month" ? monthFmt.format(d) : p.period,
-          long: histRange === "month" ? monthLongFmt.format(d) : p.period,
-        };
+        const d = new Date(`${p.period}${hist.range === "month" ? "-15" : "-07-01"}T00:00:00Z`);
+        const label = hist.range === "year" ? p.period : hist.scope ? monthShortFmt.format(d) : monthFmt.format(d);
+        return { key: p.period, kind: hist.range, row: p, label,
+          long: hist.range === "month" ? monthLongFmt.format(d) : p.period };
       });
     }
   } catch { cats = []; }
   chart.classList.remove("loading");
+  renderHistCrumb();
   legend($("hist-legend"), HIST_SERIES, null, null, "rect");
   barChart(chart, {
     cats, series: HIST_SERIES, ariaLabel: "Energie im Verlauf",
-    tipHead: (c) => c.long,
+    tipHead: (c) => `${c.long} · ${c.kind === "day" ? "klicken: Tagesverlauf" : "klicken: Details"}`,
     tipRows: (r) => [
       { cls: "pv", label: "PV-Ertrag", value: `${kwh(r.pv_kwh)} kWh` },
       { cls: "load", label: "Verbrauch", value: `${kwh(r.load_kwh)} kWh` },
@@ -645,6 +668,7 @@ async function loadHistory() {
       { cls: null, label: "Autarkie", value: `${pct(r.self_sufficiency)} %` },
       ...(hasTariff() ? [{ cls: null, label: "Ersparnis", value: eur(r.savings_eur) }] : []),
     ],
+    onSelect: drillDown,
   });
   table($("hist-table"),
     ["Zeitraum", "PV (kWh)", "Verbrauch (kWh)", "Einspeisung (kWh)", "Bezug (kWh)", "Autarkie (%)",
@@ -653,17 +677,45 @@ async function loadHistory() {
       pct(c.row.self_sufficiency), ...(hasTariff() ? [num(c.row.savings_eur, 2)] : [])]));
 }
 
+// Year -> its months -> a month's days -> that day's curve.
+function drillDown(c) {
+  tooltip.hide();
+  if (c.kind === "year") setHist("month", c.key);
+  else if (c.kind === "month") setHist("days", c.key);
+  else {
+    dayState.date = c.key;
+    loadDay();
+    $("day-h").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function setHist(range, scope = null) {
+  hist.range = range;
+  hist.scope = scope;
+  for (const o of document.querySelectorAll(".segmented button")) {
+    o.setAttribute("aria-selected", String(o.dataset.range === range));
+  }
+  loadHistory();
+}
+
+function renderHistCrumb() {
+  const crumb = $("hist-crumb");
+  if (!hist.scope) { crumb.replaceChildren(); return; }
+  const label = hist.scope.length === 4 ? hist.scope : monthLongFmt.format(new Date(`${hist.scope}-15T00:00:00Z`));
+  const up = el("button", { type: "button", class: "chip", title: "Eine Ebene zurück" }, "× ", label);
+  up.addEventListener("click", () => (hist.scope.length === 7 ? setHist("month", hist.scope.slice(0, 4)) : setHist(hist.range)));
+  crumb.replaceChildren(up);
+}
+
 function initHistoryTabs() {
   for (const b of document.querySelectorAll(".segmented button")) {
-    b.addEventListener("click", () => {
-      histRange = b.dataset.range;
-      for (const o of document.querySelectorAll(".segmented button")) o.setAttribute("aria-selected", String(o === b));
-      loadHistory();
-    });
+    b.addEventListener("click", () => setHist(b.dataset.range));
   }
 }
 
 // -------------------------------------------------------------- summary
+
+let curvesFrom = null;
 
 async function loadSummary() {
   try {
@@ -672,17 +724,8 @@ async function loadSummary() {
     const rated = Number(s.inverter?.rated_power);
     if (rated > 0) ratedPower = rated;
     if (s.tariff) tariff = s.tariff;
-    const l = s.lifetime || {};
-    kv($("sys-life"), [
-      ["PV-Ertrag", `${kwh(l.pv_kwh)} kWh`],
-      ["Verbrauch", `${kwh(l.load_kwh)} kWh`],
-      ["Einspeisung", `${kwh(l.export_kwh)} kWh`],
-      ["Netzbezug", `${kwh(l.import_kwh)} kWh`],
-      ["Batterie geladen", `${kwh(l.charge_kwh)} kWh`],
-      ["Autarkie", `${pct(l.self_sufficiency)} %`],
-      ...(hasTariff() ? [["Ersparnis", eur(l.savings_eur)]] : []),
-    ]);
-    if (hasTariff()) loadSavingsCard();
+    curvesFrom = s.curves_from;
+    renderTotals(s);
     const r = s.records || {};
     const day = (d) => (d ? dateFmt.format(new Date(`${d}T12:00:00Z`)) : "–");
     kv($("sys-rec"), [
@@ -690,27 +733,51 @@ async function loadSummary() {
       ["am", day(r.best_day?.day)],
       ["Höchste Leistung", r.peak_power ? power(r.peak_power.pv_peak_w) : "–"],
       ["am", day(r.peak_power?.day)],
-      ["Daten seit", day(s.first_day)],
-      ["Import", s.history_import === "complete" ? "abgeschlossen" : (s.history_import || "–")],
+      ["Tageswerte seit", day(s.first_day)],
+      ["Kurven seit", day(s.curves_from)],
     ]);
   } catch { /* summary is optional */ }
 }
 
-async function loadSavingsCard() {
-  const card = $("savings-card");
-  card.hidden = false;
+// All-time balance. The inverter's own lifetime counters are authoritative (they
+// include everything since commissioning); the stored days are the fallback.
+async function renderTotals(s) {
+  const l = s.lifetime?.pv_kwh ? s.lifetime : s.totals;
+  if (!l) return;
+  const since = s.first_day ? dateFmt.format(new Date(`${s.first_day}T12:00:00Z`)) : null;
+  $("total-sub").textContent = s.lifetime?.pv_kwh
+    ? "seit Inbetriebnahme, laut Zählern des Wechselrichters"
+    : (since ? `seit ${since}` : "");
+  const priced = hasTariff();
+  $("total-tiles").replaceChildren(
+    tile("Erzeugt", kwh(l.pv_kwh), "kWh", "PV-Ertrag gesamt"),
+    tile("Verbraucht", kwh(l.load_kwh), "kWh", "Hausverbrauch gesamt"),
+    tile("Eigenverbrauch", kwh(l.self_consumed_kwh), "kWh", `${pct(l.self_consumption)} % des PV-Stroms selbst genutzt`),
+    tile("Autarkie", pct(l.self_sufficiency), "%", "Verbrauch ohne Netzbezug"),
+    tile("Einspeisung", kwh(l.export_kwh), "kWh", priced ? `${eur(l.feed_in_eur)} Vergütung` : null),
+    tile("Netzbezug", kwh(l.import_kwh), "kWh", priced ? `${eur(l.import_kwh * tariff.import_eur_kwh)} bezahlt` : null),
+    ...(priced ? [
+      tile("Gespart durch Eigenverbrauch", num(l.avoided_eur, 0), "€", "nicht gekaufter Netzstrom"),
+      tile("Einspeisevergütung", num(l.feed_in_eur, 0), "€", "für eingespeisten Strom"),
+    ] : []),
+  );
+  const hero = $("total-hero");
+  hero.hidden = !priced;
+  if (!priced) return;
+  $("total-value").textContent = num(l.savings_eur, 0);
+  $("total-split").textContent = `${eur(l.avoided_eur)} Eigenverbrauch + ${eur(l.feed_in_eur)} Einspeisung`;
   try {
     const [months, years] = await Promise.all([api("/api/periods?by=month"), api("/api/periods?by=year")]);
     const now = todayKey();
     const month = months.periods.find((p) => p.period === now.slice(0, 7));
     const year = years.periods.find((p) => p.period === now.slice(0, 4));
-    const total = years.periods.reduce((a, p) => a + (p.savings_eur || 0), 0);
-    const first = years.periods[0]?.period;
-    kv($("sys-savings"), [
-      ["Dieser Monat", eur(month?.savings_eur)],
+    const full = years.periods.filter((p) => p.days >= 360);
+    const perYear = full.length ? full.reduce((a, p) => a + (p.savings_eur || 0), 0) / full.length : null;
+    kv($("total-periods"), [
       ["Dieses Jahr", eur(year?.savings_eur)],
-      [first ? `Seit ${first}` : "Gesamt", eur(total)],
-      ["Tarif", `Bezug ${num(tariff.import_eur_kwh * 100, 1)} ct · Einspeisung ${num(tariff.export_eur_kwh * 100, 1)} ct`],
+      ["Dieser Monat", eur(month?.savings_eur)],
+      ...(perYear ? [["Ø pro volles Jahr", eur(perYear)]] : []),
+      ["Tarif", `${num(tariff.import_eur_kwh * 100, 1)} ct Bezug · ${num(tariff.export_eur_kwh * 100, 1)} ct Einspeisung`],
     ]);
   } catch { /* optional */ }
 }

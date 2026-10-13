@@ -71,6 +71,7 @@ def energy_kpis(row: dict[str, Any] | None, price_import: float = 0.0,
     pv, exp = row.get("pv_kwh"), row.get("export_kwh")
     out["self_sufficiency"] = None if load is None or imp is None else 1 - (_ratio(imp, load) or 0)
     out["self_consumption"] = None if pv is None or exp is None else 1 - (_ratio(exp, pv) or 0)
+    out["self_consumed_kwh"] = None if pv is None or exp is None else round(max(0.0, pv - exp), 3)
     if price_import or price_export:
         avoided = None if load is None or imp is None else max(0.0, load - imp) * price_import
         revenue = None if exp is None else exp * price_export
@@ -204,7 +205,10 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
             "charge_kwh": sample.get("e_charge_total"),
             "discharge_kwh": sample.get("e_discharge_total"),
         }
+        first_curve = s.first_curve_ts()
         return {
+            "totals": kpis(s.totals()),
+            "curves_from": datetime.fromtimestamp(first_curve, cfg.tz).date().isoformat() if first_curve else None,
             "inverter": {
                 "model": s.get_meta("inverter_model"),
                 "firmware": s.get_meta("inverter_firmware"),
