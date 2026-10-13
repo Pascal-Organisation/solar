@@ -114,15 +114,47 @@ async function proxy(request, env) {
   // Don't forward our own cookie to the origin.
   const cookies = (headers.get("Cookie") || "").split(/;\s*/).filter((c) => c && !c.startsWith(`${COOKIE}=`));
   cookies.length ? headers.set("Cookie", cookies.join("; ")) : headers.delete("Cookie");
+  // Pages are rewritten below, so the origin's ETag doesn't describe what the browser
+  // holds; always send them in full (they're small).
+  if ((headers.get("Accept") || "").includes("text/html")) {
+    headers.delete("If-None-Match");
+    headers.delete("If-Modified-Since");
+  }
 
-  const upstream = await fetch(url, { method: request.method, headers, body: request.body, redirect: "manual" });
+  // No edge cache: after a deploy the edge would keep serving the old app.js.
+  const upstream = await fetch(url, { method: request.method, headers, body: request.body, redirect: "manual", cache: "no-store" });
 
   const out = new Response(upstream.body, upstream);
   const loc = out.headers.get("Location");
   if (loc) out.headers.set("Location", loc.replace(`//${env.ORIGIN_HOST}`, `//${publicHost}`));
   // Access may hand out its own session cookie for the origin host; keep it off the public host.
   out.headers.delete("Set-Cookie");
+  // Browsers revalidate via ETag instead of keeping JS/CSS for Cloudflare's default 4 h,
+  // which paired fresh HTML with a stale app.js after deploys.
+  if (!(out.headers.get("Content-Type") || "").startsWith("text/event-stream")) {
+    out.headers.set("Cache-Control", "no-cache");
+  }
+  if ((out.headers.get("Content-Type") || "").startsWith("text/html")) return versionAssets(out);
   return out;
+}
+
+// Appends ?v=<build time> to local scripts and stylesheets, so browsers that still hold
+// an old copy fetch the current one right after a deploy.
+function versionAssets(response) {
+  const version = Date.parse(response.headers.get("Last-Modified") || "") || 0;
+  if (!version) return response;
+  response.headers.delete("ETag");
+  response.headers.delete("Last-Modified");
+  const bump = (attr) => ({
+    element(el) {
+      const v = el.getAttribute(attr);
+      if (v && !/^(https?:)?\/\//.test(v) && !v.includes("?")) el.setAttribute(attr, `${v}?v=${version / 1000}`);
+    },
+  });
+  return new HTMLRewriter()
+    .on("script[src]", bump("src"))
+    .on('link[rel="stylesheet"][href]', bump("href"))
+    .transform(response);
 }
 
 export default {
