@@ -54,14 +54,24 @@
         <h2 id="total-h">Gesamtbilanz</h2>
         <p class="muted small" id="total-sub"></p>
       </div>
-      <div class="totals">
-        <div class="card total-hero" id="total-hero" hidden>
+      <div class="card total-hero" id="total-hero" hidden>
+        <div>
           <p class="label">Gesamtnutzen der PV-Anlage</p>
           <p class="hero-value"><span id="total-value">–</span><span class="unit">€</span></p>
           <p class="hero-sub" id="total-split"></p>
-          <dl class="kv" id="total-periods"></dl>
         </div>
-        <div class="tiles tiles-total" id="total-tiles"></div>
+        <div class="period-stats" id="total-periods"></div>
+      </div>
+      <div class="totals">
+        <div class="card">
+          <h3>Energie</h3>
+          <div id="total-energy"></div>
+        </div>
+        <div class="card" id="total-money-card" hidden>
+          <h3>Geld</h3>
+          <dl class="ledger" id="total-money"></dl>
+          <p class="muted small" id="total-tariff"></p>
+        </div>
       </div>
     </section>
 
