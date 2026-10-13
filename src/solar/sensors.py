@@ -43,6 +43,14 @@ SAMPLE_COLUMNS: dict[str, tuple[str, ...]] = {
     "e_import_total": ("meter_e_total_imp", "e_total_imp"),
     "e_charge_total": ("e_bat_charge_total",),
     "e_discharge_total": ("e_bat_discharge_total",),
+    # The inverter's own "today" counters (reset at midnight). They complete days
+    # whose midnight reading is missing (first day, collector outage). There is
+    # deliberately no grid pair: e_day_exp/e_day_imp count the inverter's AC
+    # side, not the smart meter, so grid energy is reconstructed by balance.
+    "e_pv_day": ("e_day",),
+    "e_load_day": ("e_load_day",),
+    "e_charge_day": ("e_bat_charge_day",),
+    "e_discharge_day": ("e_bat_discharge_day",),
 }
 
 # daily energy column -> lifetime counter column it is derived from
@@ -53,6 +61,14 @@ COUNTERS: dict[str, str] = {
     "import_kwh": "e_import_total",
     "charge_kwh": "e_charge_total",
     "discharge_kwh": "e_discharge_total",
+}
+
+# daily energy column -> the inverter's own counter for "today"
+DAY_COUNTERS: dict[str, str] = {
+    "pv_kwh": "e_pv_day",
+    "load_kwh": "e_load_day",
+    "charge_kwh": "e_charge_day",
+    "discharge_kwh": "e_discharge_day",
 }
 
 
