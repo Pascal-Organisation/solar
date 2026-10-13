@@ -1,0 +1,6 @@
+*
+!requirements.lock
+!src/
+!web/
+!deploy/docker-compose.yml
+**/__pycache__

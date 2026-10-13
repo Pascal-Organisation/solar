@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Solar</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+      <div>
+        <h1>Solar</h1>
+        <p class="sub" id="inverter">Wechselrichter</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <span class="live" id="live" data-state="loading"><span class="live-dot" aria-hidden="true"></span><span id="live-text">verbinde …</span></span>
+      <button class="icon-btn" id="theme" type="button" aria-label="Farbschema wechseln" title="Farbschema wechseln">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="now" aria-labelledby="now-h">
+      <h2 id="now-h" class="visually-hidden">Jetzt</h2>
+      <div class="hero card">
+        <p class="label">PV-Leistung jetzt</p>
+        <p class="hero-value"><span id="hero-pv">–</span><span class="unit">kW</span></p>
+        <p class="hero-sub" id="hero-sub">&nbsp;</p>
+        <div class="strings" id="strings"></div>
+      </div>
+      <div class="flow card">
+        <svg id="flow" viewBox="0 0 400 300" role="img" aria-labelledby="flow-title">
+          <title id="flow-title">Energiefluss</title>
+        </svg>
+      </div>
+    </section>
+
+    <section aria-labelledby="today-h">
+      <div class="section-head">
+        <h2 id="today-h">Heute</h2>
+      </div>
+      <div class="tiles" id="tiles"></div>
+    </section>
+
+    <section aria-labelledby="day-h">
+      <div class="section-head">
+        <h2 id="day-h">Tagesverlauf</h2>
+        <div class="day-nav">
+          <button class="icon-btn" id="day-prev" type="button" aria-label="Vorheriger Tag">‹</button>
+          <input type="date" id="day-date" aria-label="Datum">
+          <button class="icon-btn" id="day-next" type="button" aria-label="Nächster Tag">›</button>
+          <button class="chip" id="day-today" type="button">Heute</button>
+        </div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head">
+          <p class="chart-title">Leistung <span class="muted">in kW</span></p>
+          <div class="legend" id="power-legend"></div>
+        </div>
+        <div class="chart" id="power-chart"></div>
+        <p class="chart-note muted" id="day-note"></p>
+        <details class="table-view"><summary>Tabelle</summary><div id="power-table"></div></details>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head">
+          <p class="chart-title">Batterie-Ladestand <span class="muted">in %</span></p>
+        </div>
+        <div class="chart chart-small" id="soc-chart"></div>
+      </div>
+      <div class="tiles tiles-compact" id="day-totals"></div>
+    </section>
+
+    <section aria-labelledby="hist-h">
+      <div class="section-head">
+        <h2 id="hist-h">Verlauf</h2>
+        <div class="segmented" role="tablist" aria-label="Zeitraum">
+          <button type="button" role="tab" data-range="days" aria-selected="true">30 Tage</button>
+          <button type="button" role="tab" data-range="month" aria-selected="false">Monate</button>
+          <button type="button" role="tab" data-range="year" aria-selected="false">Jahre</button>
+        </div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head">
+          <p class="chart-title">Energie <span class="muted">in kWh</span></p>
+          <div class="legend" id="hist-legend"></div>
+        </div>
+        <div class="chart" id="hist-chart"></div>
+        <details class="table-view"><summary>Tabelle</summary><div id="hist-table"></div></details>
+      </div>
+    </section>
+
+    <section aria-labelledby="sys-h">
+      <div class="section-head"><h2 id="sys-h">Anlage</h2></div>
+      <div class="sys-grid">
+        <div class="card"><h3>PV-Strings</h3><dl class="kv" id="sys-pv"></dl></div>
+        <div class="card"><h3>Netz</h3><dl class="kv" id="sys-grid"></dl></div>
+        <div class="card"><h3>Batterie</h3><dl class="kv" id="sys-bat"></dl></div>
+        <div class="card"><h3>Wechselrichter</h3><dl class="kv" id="sys-inv"></dl></div>
+        <div class="card"><h3>Gesamt seit Inbetriebnahme</h3><dl class="kv" id="sys-life"></dl></div>
+        <div class="card"><h3>Rekorde</h3><dl class="kv" id="sys-rec"></dl></div>
+      </div>
+      <details class="card all-sensors">
+        <summary>Alle Messwerte</summary>
+        <div id="all-sensors"></div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="foot muted">
+    Lokal ausgelesen über UDP · keine Hersteller-Cloud ·
+    <a href="https://github.com/pascal05/solar">Quellcode</a>
+  </footer>
+  <div class="tooltip" id="tooltip" role="status" hidden></div>
+</body>
+</html>

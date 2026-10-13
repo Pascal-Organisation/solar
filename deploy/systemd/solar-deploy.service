@@ -1,0 +1,13 @@
+[Unit]
+Description=solar: verify and deploy the latest signed image
+Documentation=https://github.com/pascal05/solar/blob/main/deploy/README.md
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/solar-deploy.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
