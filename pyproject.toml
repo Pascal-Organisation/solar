@@ -7,14 +7,15 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
   "goodwe==0.4.10",
-  "fastapi==0.118.0",
-  "uvicorn==0.37.0",
-  "prometheus-client==0.23.1",
+  "fastapi==0.143.0",
+  "starlette==1.8.0",
+  "uvicorn==0.54.0",
+  "prometheus-client==0.26.0",
   "httpx==0.28.1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==8.4.2", "ruff==0.13.3"]
+dev = ["pytest==9.1.1", "ruff==0.17.0"]
 
 [project.scripts]
 solar = "solar.__main__:main"
