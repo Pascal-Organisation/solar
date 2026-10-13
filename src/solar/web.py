@@ -22,9 +22,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Config
 from .db import Store
+from .sensors import to_sample
 
 STALE_AFTER = 180
-STREAM_INTERVAL = 5
+STREAM_INTERVAL = 1
+KEEPALIVE_EVERY = 15
 
 # Fields of the full reading worth surfacing as status text on the dashboard.
 STATUS_FIELDS = (
@@ -52,8 +54,16 @@ def _ratio(part: float | None, whole: float | None) -> float | None:
     return max(0.0, min(1.0, part / whole))
 
 
-def energy_kpis(row: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Self-sufficiency (share of load not bought) and self-consumption (share of PV kept)."""
+def energy_kpis(row: dict[str, Any] | None, price_import: float = 0.0,
+                price_export: float = 0.0) -> dict[str, Any] | None:
+    """Self-sufficiency (share of load not bought), self-consumption (share of PV kept)
+    and, with a tariff, the money PV + battery earned.
+
+    savings = avoided purchase + feed-in revenue
+            = (load - import) * price_import + export * price_export
+    i.e. the bill without the plant (load * price_import) minus the actual net bill
+    (import * price_import - export * price_export).
+    """
     if not row:
         return None
     out = dict(row)
@@ -61,12 +71,22 @@ def energy_kpis(row: dict[str, Any] | None) -> dict[str, Any] | None:
     pv, exp = row.get("pv_kwh"), row.get("export_kwh")
     out["self_sufficiency"] = None if load is None or imp is None else 1 - (_ratio(imp, load) or 0)
     out["self_consumption"] = None if pv is None or exp is None else 1 - (_ratio(exp, pv) or 0)
+    if price_import or price_export:
+        avoided = None if load is None or imp is None else max(0.0, load - imp) * price_import
+        revenue = None if exp is None else exp * price_export
+        out["avoided_eur"] = None if avoided is None else round(avoided, 2)
+        out["feed_in_eur"] = None if revenue is None else round(revenue, 2)
+        out["savings_eur"] = None if avoided is None or revenue is None else round(avoided + revenue, 2)
+        out["cost_eur"] = None if imp is None or exp is None else round(imp * price_import - exp * price_export, 2)
     return out
 
 
 def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
     app = FastAPI(title="solar", docs_url=None, redoc_url=None, openapi_url=None)
     local = threading.local()  # sqlite connections must not be shared across threads
+
+    def kpis(row: dict[str, Any] | None) -> dict[str, Any] | None:
+        return energy_kpis(row, cfg.price_import, cfg.price_export)
 
     def store() -> Store:
         s = getattr(local, "store", None)
@@ -87,22 +107,25 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    def live_payload() -> dict[str, Any]:
+    def live_payload(include_all: bool = False) -> dict[str, Any]:
+        """The newest reading — refreshed on every poll, not just every stored sample."""
         s = store()
-        sample = s.latest_sample()
         latest = s.latest()
-        if sample is None or latest is None:
+        if latest is None:
             raise HTTPException(503, "no data yet")
-        _, full = latest
-        age = int(time.time()) - sample["ts"]
-        return {
-            "ts": sample["ts"],
+        ts, full = latest
+        age = round(time.time() - ts, 1)
+        payload = {
+            "ts": ts,
             "age": age,
             "stale": age > STALE_AFTER,
-            "values": {k: v for k, v in sample.items() if k != "ts"},
+            "values": to_sample(full),
             "status": {k: full.get(k) for k in STATUS_FIELDS if k in full},
-            "today": energy_kpis(next(iter(s.daily_range(today(), today())), None)),
+            "today": kpis(next(iter(s.daily_range(today(), today())), None)),
         }
+        if include_all:
+            payload["all"] = full
+        return payload
 
     @app.get("/healthz")
     def healthz() -> JSONResponse:
@@ -121,17 +144,20 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
     async def stream(request: Request) -> StreamingResponse:
         async def events() -> AsyncIterator[str]:
             last_ts = None
-            yield "retry: 5000\n\n"
+            idle = 0
+            yield "retry: 3000\n\n"
             while not await request.is_disconnected():
                 try:
-                    payload = live_payload()
+                    payload = live_payload(include_all=True)
                 except HTTPException:
                     payload = None
                 if payload and payload["ts"] != last_ts:
-                    last_ts = payload["ts"]
+                    last_ts, idle = payload["ts"], 0
                     yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
                 else:
-                    yield ": keepalive\n\n"
+                    idle += 1
+                    if idle % KEEPALIVE_EVERY == 0:
+                        yield ": keepalive\n\n"
                 await asyncio.sleep(STREAM_INTERVAL)
 
         return StreamingResponse(
@@ -150,7 +176,7 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
             "start": start,
             "end": end,
             "series": s.series_5m(start, end),
-            "totals": energy_kpis(next(iter(s.daily_range(d, d)), None)),
+            "totals": kpis(next(iter(s.daily_range(d, d)), None)),
         }
 
     @app.get("/api/days")
@@ -160,11 +186,11 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         if last < first or (last - first) > timedelta(days=400):
             raise HTTPException(400, "range must be 0..400 days")
-        return {"days": [energy_kpis(r) for r in store().daily_range(first, last)]}
+        return {"days": [kpis(r) for r in store().daily_range(first, last)]}
 
     @app.get("/api/periods")
     def periods(by: str = Query(pattern="^(month|year)$")) -> dict[str, Any]:
-        return {"by": by, "periods": [energy_kpis(r) for r in store().grouped(by)]}
+        return {"by": by, "periods": [kpis(r) for r in store().grouped(by)]}
 
     @app.get("/api/summary")
     def summary() -> dict[str, Any]:
@@ -184,7 +210,8 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
                 "firmware": s.get_meta("inverter_firmware"),
                 "rated_power": s.get_meta("inverter_rated_power"),
             },
-            "lifetime": energy_kpis(lifetime),
+            "lifetime": kpis(lifetime),
+            "tariff": {"import_eur_kwh": cfg.price_import, "export_eur_kwh": cfg.price_export},
             "first_day": s.first_day(),
             "records": s.records(),
             "history_import": s.get_meta("sems_import_status"),
@@ -196,7 +223,8 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
         if latest is None:
             raise HTTPException(503, "no data yet")
         ts, full = latest
-        return {"ts": ts, "data": full}
+        raw = store().get_meta("sensors")
+        return {"ts": ts, "data": full, "sensors": json.loads(raw) if raw else {}}
 
     web_dir = web_dir or os.environ.get("SOLAR_WEB_DIR", "/app/web")
     if os.path.isdir(web_dir):

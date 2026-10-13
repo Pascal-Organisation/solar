@@ -7,6 +7,7 @@ library can also change inverter settings; this program never does.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from datetime import datetime
@@ -36,6 +37,7 @@ class Collector:
         self.last_rollup = 0.0
         self.last_prune = 0.0
         self.last_day_rolled: str | None = None
+        self.last_store = 0.0
 
     async def connect(self) -> goodwe.Inverter:
         inv = await goodwe.connect(
@@ -46,6 +48,9 @@ class Collector:
         self.store.set_meta("inverter_model", inv.model_name or "")
         self.store.set_meta("inverter_firmware", f"{inv.firmware} / {inv.arm_firmware}")
         self.store.set_meta("inverter_rated_power", str(inv.rated_power or ""))
+        # Names and units let the dashboard label every raw value.
+        self.store.set_meta("sensors", json.dumps(
+            {s.id_: [s.name, s.unit, getattr(s.kind, "name", None)] for s in inv.sensors()}))
         return inv
 
     async def poll_once(self) -> bool:
@@ -62,9 +67,16 @@ class Collector:
             return False
 
         self.failures = 0
-        now = int(time.time())
-        self.store.insert_sample(now, to_sample(data), jsonable(data))
-        self.metrics.update(self.inverter.sensors(), data, now)
+        now = time.time()
+        full = jsonable(data)
+        # Every poll refreshes the live view and metrics; history only needs
+        # a raw sample every store_interval (daily energy comes from counters).
+        if now - self.last_store >= self.cfg.store_interval:
+            self.last_store = now
+            self.store.insert_sample(int(now), to_sample(data), full)
+        else:
+            self.store.set_latest(round(now, 2), full)
+        self.metrics.update(self.inverter.sensors(), data, int(now))
         return True
 
     def housekeeping(self, now: float) -> None:
@@ -86,7 +98,8 @@ class Collector:
     async def run(self) -> None:
         if not self.cfg.inverter_host:
             raise SystemExit("SOLAR_INVERTER_HOST is not set")
-        log.info("polling %s every %ss", self.cfg.inverter_host, self.cfg.poll_interval)
+        log.info("polling %s every %ss, storing every %ss", self.cfg.inverter_host,
+                 self.cfg.poll_interval, self.cfg.store_interval)
         while True:
             started = time.monotonic()
             await self.poll_once()
@@ -95,4 +108,4 @@ class Collector:
             except Exception:
                 log.exception("housekeeping failed")
             elapsed = time.monotonic() - started
-            await asyncio.sleep(max(0.5, self.cfg.poll_interval - elapsed))
+            await asyncio.sleep(max(0.2, self.cfg.poll_interval - elapsed))

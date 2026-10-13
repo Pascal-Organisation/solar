@@ -25,9 +25,12 @@ class Config:
     inverter_host: str
     inverter_family: str | None
     poll_interval: float
+    store_interval: float
     raw_retention_days: int
     metrics_port: int
     web_port: int
+    price_import: float
+    price_export: float
 
     @classmethod
     def from_env(cls) -> Config:
@@ -36,8 +39,14 @@ class Config:
             tz=ZoneInfo(_env("TZ", "Europe/Berlin")),
             inverter_host=_env("SOLAR_INVERTER_HOST", ""),
             inverter_family=os.environ.get("SOLAR_INVERTER_FAMILY") or None,
-            poll_interval=float(_env("SOLAR_POLL_INTERVAL", "10")),
+            # Live values (dashboard, metrics) refresh every poll; raw samples are
+            # persisted at most every SOLAR_STORE_INTERVAL seconds.
+            poll_interval=float(_env("SOLAR_POLL_INTERVAL", "2")),
+            store_interval=float(_env("SOLAR_STORE_INTERVAL", "10")),
             raw_retention_days=int(_env("SOLAR_RAW_RETENTION_DAYS", "30")),
             metrics_port=int(_env("SOLAR_METRICS_PORT", "9108")),
             web_port=int(_env("SOLAR_WEB_PORT", "8080")),
+            # Tariff in EUR/kWh for the savings figures; 0 hides them.
+            price_import=float(_env("SOLAR_PRICE_IMPORT", "0")),
+            price_export=float(_env("SOLAR_PRICE_EXPORT", "0")),
         )
