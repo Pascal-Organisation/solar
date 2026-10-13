@@ -194,7 +194,8 @@ def parse_intraday(series: dict[str, list], tz: ZoneInfo, scale: float, grid_sig
     """Convert SEMS curves to 5-minute buckets in our sign convention.
 
     `scale` converts SEMS units to W; the signs map SEMS conventions onto ours
-    (grid: + export, battery: + discharge).
+    (grid: + export, battery: + discharge). SEMS+ already uses that convention,
+    so both default to 1; they exist for accounts/firmware that differ.
     """
     points: dict[int, dict[str, float]] = defaultdict(dict)
     names = {"pSystem": "pv_w", "pConsum": "load_w", "pGrid": "grid_w", "pBat": "battery_w", "soc": "soc"}
@@ -244,7 +245,7 @@ class Importer:
         self.tz = tz
         self.scale = float(os.environ.get("SEMS_POWER_SCALE", "0")) or None
         self.grid_sign = float(os.environ.get("SEMS_GRID_SIGN", "1"))
-        self.battery_sign = float(os.environ.get("SEMS_BATTERY_SIGN", "-1"))
+        self.battery_sign = float(os.environ.get("SEMS_BATTERY_SIGN", "1"))
 
     def station(self) -> str:
         configured = os.environ.get("SEMS_STATION_ID")

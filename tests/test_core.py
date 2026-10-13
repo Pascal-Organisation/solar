@@ -97,7 +97,7 @@ def test_parse_daily_skips_all_zero_days():
 def test_parse_intraday_scales_and_maps_signs():
     series = {
         "pSystem": [{"tp": "2026-06-01 12:00:00", "power": "2.0"}, {"tp": "2026-06-01 12:01:00", "power": 4}],
-        "pBat": [{"tp": "2026-06-01 12:00:00", "power": 1.0}],  # SEMS: + charging
+        "pBat": [{"tp": "2026-06-01 12:00:00", "power": 1.0}],  # flipped by battery_sign=-1
         "pGrid": [{"tp": "2026-06-01 12:00:00", "power": -0.5}],
         "soc": [{"tp": "2026-06-01 12:00:00", "power": 80}],
     }
