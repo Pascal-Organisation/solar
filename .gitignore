@@ -1,0 +1,14 @@
+.claude/
+__pycache__/
+*.pyc
+.venv/
+*.db
+*.db-*
+.env
+*.env
+!deploy/*.env.example
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
