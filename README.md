@@ -26,6 +26,8 @@ SEMS app — stores the data in SQLite, and serves a fast, private web dashboard
   Content-Security-Policy; light and dark mode; works on a phone.
 - **Savings in euros** from a configurable tariff: avoided grid purchases plus feed-in
   revenue — per day, month, year and lifetime.
+- **Battery balance**: energy stored and taken out, round-trip efficiency per month and
+  year, and whether it paid off (discharge × import price − charge × feed-in tariff).
 - **Prometheus metrics** for every sensor, so an existing Grafana can use them too.
 
 ## Architecture

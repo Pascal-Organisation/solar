@@ -46,6 +46,8 @@ function kwh(v) {
 
 const eurFmt = new Intl.NumberFormat(LOCALE, { style: "currency", currency: "EUR" });
 const eur = (v) => (v === null || v === undefined ? "–" : eurFmt.format(v));
+const moneyFmt = new Intl.NumberFormat(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (v) => (v === null || v === undefined ? "–" : moneyFmt.format(v));
 const hasTariff = () => tariff.import_eur_kwh > 0 || tariff.export_eur_kwh > 0;
 let tariff = { import_eur_kwh: 0, export_eur_kwh: 0 };
 
@@ -454,12 +456,13 @@ function renderLive(p) {
     tile("Autarkie", pct(t.self_sufficiency), "%", "Anteil ohne Netzbezug"),
     tile("Eigenverbrauch", pct(t.self_consumption), "%", "Anteil PV selbst genutzt"),
     tile("Einspeisung", kwh(t.export_kwh), "kWh", hasTariff() ? `+${eur(t.feed_in_eur)} Vergütung` : null),
-    tile("Netzbezug", kwh(t.import_kwh), "kWh", hasTariff() ? `${eur(t.import_kwh * tariff.import_eur_kwh)} Kosten` : null),
+    tile("Netzbezug", kwh(t.import_kwh), "kWh", hasTariff() && t.import_kwh != null ? `${eur(t.import_kwh * tariff.import_eur_kwh)} Kosten` : null),
     tile("Batterie", num(v.soc, 0), "%", `geladen ${kwh(t.charge_kwh)} · entladen ${kwh(t.discharge_kwh)} kWh`,
       meter((v.soc || 0) / 100, "bat")),
     ...(hasTariff() ? [savingsTile("Ersparnis heute", t)] : []),
   );
   renderAllSensors(p);
+  if (p.lifetime && summaryLoaded) renderLifetime(p.lifetime);
 
   const s = p.status || {};
   kv($("sys-pv"), [
@@ -527,7 +530,7 @@ function connectLive() {
 
 // ------------------------------------------------------------- day view
 
-const dayState = { date: todayKey(), hidden: new Set(["bat", "grid"]), data: null };
+const dayState = { date: todayKey(), followToday: true, hidden: new Set(["bat", "grid"]), data: null };
 const DAY_SERIES = [
   { key: "load", cls: "load", label: "Verbrauch" },
   { key: "pv", cls: "pv", label: "PV", area: true },
@@ -599,14 +602,23 @@ function renderDay() {
 }
 
 function initDayNav() {
-  const go = (key) => { dayState.date = key > todayKey() ? todayKey() : key; loadDay(); };
+  const go = (key) => {
+    dayState.date = key > todayKey() ? todayKey() : key;
+    dayState.followToday = dayState.date === todayKey();
+    loadDay();
+  };
   $("day-prev").addEventListener("click", () => go(shiftDay(dayState.date, -1)));
   $("day-next").addEventListener("click", () => go(shiftDay(dayState.date, 1)));
   $("day-today").addEventListener("click", () => go(todayKey()));
   $("day-date").max = todayKey();
   $("day-date").addEventListener("change", (e) => e.target.value && go(e.target.value));
-  // Keep "today" fresh without a reload.
-  setInterval(() => { if (dayState.date === todayKey()) loadDay(); }, 60000);
+  // Keep "today" fresh without a reload, and roll over to the new day after midnight.
+  setInterval(() => {
+    if (!dayState.followToday) return;
+    dayState.date = todayKey();
+    $("day-date").max = todayKey();
+    loadDay();
+  }, 60000);
 }
 
 // ------------------------------------------------------------- history
@@ -684,6 +696,7 @@ function drillDown(c) {
   else if (c.kind === "month") setHist("days", c.key);
   else {
     dayState.date = c.key;
+    dayState.followToday = c.key === todayKey();
     loadDay();
     $("day-h").scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -716,6 +729,7 @@ function initHistoryTabs() {
 // -------------------------------------------------------------- summary
 
 let curvesFrom = null;
+let summaryLoaded = false;
 
 async function loadSummary() {
   try {
@@ -725,6 +739,7 @@ async function loadSummary() {
     if (rated > 0) ratedPower = rated;
     if (s.tariff) tariff = s.tariff;
     curvesFrom = s.curves_from;
+    summaryLoaded = true;
     renderTotals(s);
     const r = s.records || {};
     const day = (d) => (d ? dateFmt.format(new Date(`${d}T12:00:00Z`)) : "–");
@@ -767,47 +782,25 @@ function ledgerRow(label, value, cls = "") {
   return [el("dt", { class: cls }, label), el("dd", { class: cls }, value)];
 }
 
+let firstDay = null;
+
 async function renderTotals(s) {
-  const l = s.lifetime?.pv_kwh ? s.lifetime : s.totals;
-  if (!l) return;
+  const lifetime = s.lifetime?.pv_kwh ? s.lifetime : null;
+  firstDay = s.first_day;
   const since = s.first_day ? dateFmt.format(new Date(`${s.first_day}T12:00:00Z`)) : null;
-  $("total-sub").textContent = s.lifetime?.pv_kwh
-    ? "seit Inbetriebnahme · Zähler des Wechselrichters"
-    : (since ? `seit ${since}` : "");
-
-  const fromPv = Math.max(0, (l.load_kwh ?? 0) - (l.import_kwh ?? 0));
-  $("total-energy").replaceChildren(
-    splitBar("Wohin ging der Solarstrom?", l.pv_kwh, [
-      { label: "selbst genutzt", value: l.self_consumed_kwh ?? 0, cls: "load" },
-      { label: "eingespeist", value: l.export_kwh ?? 0, cls: "grid" },
-    ]),
-    splitBar("Woher kam der Strom im Haus?", l.load_kwh, [
-      { label: "aus PV & Batterie (Autarkie)", value: fromPv, cls: "pv" },
-      { label: "aus dem Netz", value: l.import_kwh ?? 0, cls: "grid" },
-    ]),
-  );
-
-  const priced = hasTariff();
-  $("total-hero").hidden = !priced;
-  $("total-money-card").hidden = !priced;
-  if (!priced) return;
-
-  $("total-value").textContent = num(l.savings_eur, 0);
-  $("total-split").textContent = `${eur(l.avoided_eur)} gespart + ${eur(l.feed_in_eur)} Einspeisevergütung`;
-  // Average gain per month since the first day on record (≈ commissioning).
-  const months = s.first_day ? (Date.now() - Date.parse(`${s.first_day}T00:00:00Z`)) / (30.44 * 86400e3) : 0;
-  $("total-money").replaceChildren(
-    ...ledgerRow("Gespart durch Eigenverbrauch", `+ ${eur(l.avoided_eur)}`),
-    ...ledgerRow("Einspeisevergütung", `+ ${eur(l.feed_in_eur)}`),
-    ...ledgerRow("Gesamtnutzen", eur(l.savings_eur), "sum"),
-    ...(months >= 1 ? ledgerRow("Unterm Strich: Gewinn pro Monat", `Ø ${eur(l.savings_eur / months)}`, "sum status-ok") : []),
-  );
+  const sub = lifetime ? "seit Inbetriebnahme · Zähler des Wechselrichters" : (since ? `seit ${since}` : "");
+  $("total-sub").textContent = sub;
+  $("bat-sub").textContent = sub;
+  renderLifetime(lifetime || s.totals);
   $("total-tariff").textContent =
     `Tarif: ${num(tariff.import_eur_kwh * 100, 1)} ct/kWh Bezug, ${num(tariff.export_eur_kwh * 100, 1)} ct/kWh Einspeisung `
     + "(für alle Zeiträume angewendet).";
 
   try {
     const [months, years] = await Promise.all([api("/api/periods?by=month"), api("/api/periods?by=year")]);
+    renderBatteryHistory(months.periods, years.periods);
+    renderBattery(lifetime || s.totals);
+    if (!hasTariff()) return;
     const now = todayKey();
     const month = months.periods.find((p) => p.period === now.slice(0, 7));
     const year = years.periods.find((p) => p.period === now.slice(0, 4));
@@ -821,6 +814,119 @@ async function renderTotals(s) {
       ...(perYear ? [stat("Ø pro volles Jahr", perYear)] : []),
     );
   } catch { /* optional */ }
+}
+
+// Everything derived from the lifetime counters; called on every summary reload and,
+// with the counters from the live stream, on every reading.
+function renderLifetime(l) {
+  if (!l) return;
+  const fromPv = Math.max(0, (l.load_kwh ?? 0) - (l.import_kwh ?? 0));
+  $("total-energy").replaceChildren(
+    splitBar("Wohin ging der Solarstrom?", l.pv_kwh, [
+      { label: "selbst genutzt", value: l.self_consumed_kwh ?? 0, cls: "load" },
+      { label: "eingespeist", value: l.export_kwh ?? 0, cls: "grid" },
+    ]),
+    splitBar("Woher kam der Strom im Haus?", l.load_kwh, [
+      { label: "aus PV & Batterie (Autarkie)", value: fromPv, cls: "pv" },
+      { label: "aus dem Netz", value: l.import_kwh ?? 0, cls: "grid" },
+    ]),
+  );
+  renderBattery(l);
+
+  const priced = hasTariff();
+  $("total-hero").hidden = !priced;
+  $("total-money-card").hidden = !priced;
+  if (!priced) return;
+
+  // Cents, so the figure visibly moves: it grows by only a few euros per day.
+  $("total-value").textContent = money(l.savings_eur);
+  $("total-split").textContent = `${eur(l.avoided_eur)} gespart + ${eur(l.feed_in_eur)} Einspeisevergütung`;
+  // Average gain per month since the first day on record (≈ commissioning).
+  const months = firstDay ? (Date.now() - Date.parse(`${firstDay}T00:00:00Z`)) / (30.44 * 86400e3) : 0;
+  $("total-money").replaceChildren(
+    ...ledgerRow("Gespart durch Eigenverbrauch", `+ ${eur(l.avoided_eur)}`),
+    ...ledgerRow("Einspeisevergütung", `+ ${eur(l.feed_in_eur)}`),
+    ...ledgerRow("Gesamtnutzen", eur(l.savings_eur), "sum"),
+    ...(months >= 1 ? ledgerRow("Unterm Strich: Gewinn pro Monat", `Ø ${eur(l.savings_eur / months)}`, "sum status-ok") : []),
+  );
+}
+
+// ------------------------------------------------------------- battery
+
+const BAT_SERIES = [
+  { key: "charge_kwh", cls: "pv", label: "geladen" },
+  { key: "discharge_kwh", cls: "bat", label: "entladen" },
+];
+
+function batteryStat(label, value, detail) {
+  return el("div", { class: "period-stat" }, el("span", { class: "label" }, label), el("strong", {}, value),
+    ...(detail ? [el("span", { class: "muted small" }, detail)] : []));
+}
+
+let batteryRecent = null;  // efficiency over the last 12 complete months
+
+function renderBattery(l) {
+  const chg = l.charge_kwh, dis = l.discharge_kwh;
+  if (!chg) return;
+  const eff = l.battery_efficiency;
+  $("bat-stats").replaceChildren(
+    batteryStat("eingespeichert", `${kwh(chg)} kWh`),
+    batteryStat("entnommen", `${kwh(dis)} kWh`, `Verlust ${kwh(l.battery_loss_kwh)} kWh`),
+    batteryStat("Wirkungsgrad", `${pct(eff)} %`,
+      batteryRecent ? `letzte 12 Monate ${pct(batteryRecent)} %` : null),
+    batteryStat("Anteil am Hausverbrauch", `${pct(l.battery_share)} %`),
+  );
+  if (!hasTariff()) {
+    $("bat-hero-label").textContent = "Aus der Batterie genutzt";
+    $("bat-value").textContent = kwh(dis);
+    $("bat-unit").textContent = "kWh";
+    $("bat-verdict").textContent = "";
+    return;
+  }
+  const pIn = tariff.export_eur_kwh, pOut = tariff.import_eur_kwh;
+  $("bat-value").textContent = money(l.battery_eur);
+  // Per kWh taken out: it replaced grid power, and 1/eff kWh of PV surplus went in for it.
+  const perKwh = eff ? pOut - pIn / eff : null;
+  const breakEven = pOut > 0 ? pIn / pOut : null;
+  const good = (l.battery_eur ?? 0) > 0;
+  $("bat-verdict").replaceChildren(
+    el("strong", { class: good ? "status-ok" : "status-bad" }, good ? "Hat sich gelohnt. " : "Bisher kein Gewinn. "),
+    `${kwh(dis)} kWh aus der Batterie ersetzten Netzstrom für ${eur(dis * pOut)}; `
+      + `die ${kwh(chg)} kWh Solarstrom zum Laden hätten eingespeist ${eur(chg * pIn)} gebracht. `
+      + (perKwh !== null ? `Netto ${num(perKwh * 100, 1)} ct je entnommener kWh` : "")
+      + (breakEven !== null ? ` – lohnend, solange der Wirkungsgrad über ${pct(breakEven)} % liegt.` : "."),
+  );
+}
+
+function renderBatteryHistory(months, years) {
+  const complete = months.filter((p) => p.period < todayKey().slice(0, 7)).slice(-12);
+  const c12 = complete.reduce((a, p) => a + (p.charge_kwh || 0), 0);
+  const d12 = complete.reduce((a, p) => a + (p.discharge_kwh || 0), 0);
+  batteryRecent = c12 >= 1 ? d12 / c12 : null;
+
+  const cats = months.slice(-24).map((p) => {
+    const d = new Date(`${p.period}-15T00:00:00Z`);
+    return { key: p.period, label: monthFmt.format(d), long: monthLongFmt.format(d), row: p };
+  });
+  legend($("bat-legend"), BAT_SERIES, null, null, "rect");
+  barChart($("bat-chart"), {
+    cats, series: BAT_SERIES, ariaLabel: "Batterie: geladen und entladen pro Monat",
+    tipHead: (c) => `${c.long}${c.row.days < 28 ? ` · nur ${c.row.days} Tage erfasst` : ""}`,
+    tipRows: (r) => [
+      { cls: "pv", label: "geladen", value: `${kwh(r.charge_kwh)} kWh` },
+      { cls: "bat", label: "entladen", value: `${kwh(r.discharge_kwh)} kWh` },
+      { cls: null, label: "Wirkungsgrad", value: `${pct(r.battery_efficiency)} %` },
+      { cls: null, label: "Anteil Hausverbrauch", value: `${pct(r.battery_share)} %` },
+      ...(hasTariff() ? [{ cls: null, label: "Nutzen", value: eur(r.battery_eur) }] : []),
+    ],
+  });
+  $("bat-note").textContent = "Wirkungsgrad = entladen ÷ geladen, inklusive Umwandlungs- und Standby-Verlusten. "
+    + "Nutzen = entladen × Bezugspreis − geladen × Einspeisevergütung; die Batterie wird praktisch nur aus PV geladen.";
+  table($("bat-table"),
+    ["Jahr", "Geladen (kWh)", "Entladen (kWh)", "Wirkungsgrad (%)", "Anteil Haus (%)",
+      ...(hasTariff() ? ["Nutzen (€)"] : [])],
+    years.map((p) => [p.days < 360 ? `${p.period} (${p.days} T.)` : p.period, kwh(p.charge_kwh), kwh(p.discharge_kwh),
+      pct(p.battery_efficiency), pct(p.battery_share), ...(hasTariff() ? [money(p.battery_eur)] : [])]));
 }
 
 // Labels and units for every raw sensor, fetched once; values then stream in live.
@@ -861,5 +967,8 @@ document.addEventListener("DOMContentLoaded", () => {
   loadSummary().then(connectLive);
   loadDay();
   loadHistory();
-  setInterval(loadSummary, 300000);
+  setInterval(() => {
+    loadSummary();
+    if (hist.range === "days" && !hist.scope) loadHistory();  // the last 30 days roll forward
+  }, 300000);
 });

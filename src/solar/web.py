@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import Config
 from .db import Store
-from .sensors import to_sample
+from .sensors import COUNTERS, to_sample
 
 STALE_AFTER = 180
 STREAM_INTERVAL = 1
@@ -79,7 +79,21 @@ def energy_kpis(row: dict[str, Any] | None, price_import: float = 0.0,
         out["feed_in_eur"] = None if revenue is None else round(revenue, 2)
         out["savings_eur"] = None if avoided is None or revenue is None else round(avoided + revenue, 2)
         out["cost_eur"] = None if imp is None or exp is None else round(imp * price_import - exp * price_export, 2)
+    # Battery: what came out replaced grid power, what went in was PV surplus that
+    # would otherwise have been exported (grid charging is ~1 % here and ignored).
+    chg, dis = row.get("charge_kwh"), row.get("discharge_kwh")
+    out["battery_loss_kwh"] = None if chg is None or dis is None else round(chg - dis, 3)
+    # Day-level ratios are dominated by the state-of-charge change; only show it from 1 kWh on.
+    out["battery_efficiency"] = None if chg is None or dis is None or chg < 1 else round(dis / chg, 4)
+    out["battery_share"] = None if dis is None or not load else round(min(1.0, dis / load), 4)
+    if (price_import or price_export) and chg is not None and dis is not None:
+        out["battery_eur"] = round(dis * price_import - chg * price_export, 2)
     return out
+
+
+def lifetime_row(sample: dict[str, Any]) -> dict[str, Any]:
+    """Energy since commissioning from the inverter's lifetime counters."""
+    return {energy: sample.get(counter) for energy, counter in COUNTERS.items()}
 
 
 def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
@@ -116,13 +130,17 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
             raise HTTPException(503, "no data yet")
         ts, full = latest
         age = round(time.time() - ts, 1)
+        values = to_sample(full)
         payload = {
             "ts": ts,
             "age": age,
             "stale": age > STALE_AFTER,
-            "values": to_sample(full),
+            "values": values,
             "status": {k: full.get(k) for k in STATUS_FIELDS if k in full},
             "today": kpis(next(iter(s.daily_range(today(), today())), None)),
+            # Lets the all-time balance move with every reading instead of every summary reload.
+            # Counters read as 0 on a garbled frame; skip those rather than show a dip.
+            "lifetime": kpis(lifetime_row(values)) if all(values.get(c) for c in COUNTERS.values()) else None,
         }
         if include_all:
             payload["all"] = full
@@ -196,15 +214,7 @@ def create_app(cfg: Config, web_dir: str | None = None) -> FastAPI:
     @app.get("/api/summary")
     def summary() -> dict[str, Any]:
         s = store()
-        sample = s.latest_sample() or {}
-        lifetime = {
-            "pv_kwh": sample.get("e_pv_total"),
-            "load_kwh": sample.get("e_load_total"),
-            "export_kwh": sample.get("e_export_total"),
-            "import_kwh": sample.get("e_import_total"),
-            "charge_kwh": sample.get("e_charge_total"),
-            "discharge_kwh": sample.get("e_discharge_total"),
-        }
+        lifetime = lifetime_row(s.latest_sample() or {})
         first_curve = s.first_curve_ts()
         return {
             "totals": kpis(s.totals()),
