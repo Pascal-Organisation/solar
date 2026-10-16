@@ -157,6 +157,7 @@ def test_web_api(tmp_path, monkeypatch):
     body = r.json()
     assert body["values"]["pv_w"] == 1234.0 and body["values"]["soc"] == 51.0 and not body["stale"]
     assert "all" not in body
+    assert body["lifetime"] is None  # the newest reading carries no counters
     assert "default-src 'self'" in r.headers["content-security-policy"]
     assert r.headers["cache-control"] == "no-store"
 
@@ -171,6 +172,16 @@ def test_web_api(tmp_path, monkeypatch):
     assert summary["curves_from"] == datetime.now(TZ).date().isoformat()
     assert "savings_eur" in client.get("/api/day").json()["totals"]
 
+    # With counters in the newest reading, the all-time balance comes live with it.
+    s.set_latest(now + 3, {"e_total": 101.0, "e_load_total": 201.0, "meter_e_total_exp": 51.0,
+                           "meter_e_total_imp": 10.0, "e_bat_charge_total": 30.0, "e_bat_discharge_total": 21.0})
+    live = client.get("/api/live").json()["lifetime"]
+    assert live["pv_kwh"] == 101.0 and live["savings_eur"] > summary["lifetime"]["savings_eur"]
+    # A garbled frame with a zeroed counter must not make the total dip.
+    s.set_latest(now + 4, {"e_total": 101.0, "e_load_total": 0.0, "meter_e_total_exp": 51.0,
+                           "meter_e_total_imp": 10.0, "e_bat_charge_total": 30.0, "e_bat_discharge_total": 21.0})
+    assert client.get("/api/live").json()["lifetime"] is None
+
 
 def test_savings_formula():
     k = energy_kpis({"pv_kwh": 30.0, "load_kwh": 15.0, "import_kwh": 3.0, "export_kwh": 16.0}, 0.33, 0.08)
@@ -181,3 +192,15 @@ def test_savings_formula():
     assert k["savings_eur"] == pytest.approx(15 * 0.33 - k["cost_eur"], abs=0.01)
     assert k["self_consumed_kwh"] == 14.0
     assert "savings_eur" not in energy_kpis({"load_kwh": 1.0, "import_kwh": 1.0})
+
+
+def test_battery_kpis():
+    k = energy_kpis({"load_kwh": 100.0, "import_kwh": 20.0, "charge_kwh": 50.0, "discharge_kwh": 40.0}, 0.33, 0.08)
+    assert k["battery_efficiency"] == pytest.approx(0.8)
+    assert k["battery_loss_kwh"] == pytest.approx(10.0)
+    assert k["battery_share"] == pytest.approx(0.4)
+    # 40 kWh replaced grid power at 33 ct, 50 kWh of PV surplus forwent 8 ct each.
+    assert k["battery_eur"] == pytest.approx(40 * 0.33 - 50 * 0.08)
+    # A day with barely any charging says nothing about efficiency.
+    assert energy_kpis({"charge_kwh": 0.4, "discharge_kwh": 3.0})["battery_efficiency"] is None
+    assert "battery_eur" not in energy_kpis({"charge_kwh": 5.0, "discharge_kwh": 4.0})
