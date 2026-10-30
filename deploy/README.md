@@ -15,7 +15,7 @@ pct create <id> local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst \
 
 Proxmox firewall for the CT (`/etc/pve/firewall/<id>.fw`): default-deny inbound,
 allow only Prometheus to `:9108`. Outbound stays open (inverter UDP, Cloudflare,
-GHCR, Sigstore).
+GHCR, Sigstore). Needs `cosign` >= v3 for the attestation checks.
 
 ## 2. Host setup (inside the CT)
 
@@ -28,7 +28,14 @@ install -m 0600 env.example /etc/solar/env                 # then edit
 install -m 0644 cloudflared.example.yml /etc/solar/cloudflared.yml   # then edit
 # cloudflared runs as 65532 and must read its token
 install -o 65532 -g 65532 -m 0400 /dev/stdin /etc/solar/tunnel_token <<< "<token>"
-install -m 0755 solar-deploy.sh solar-backup.sh /usr/local/bin/
+install -m 0755 solar-backup.sh /usr/local/bin/
+# generic deployer from security-pipeline, pinned to a reviewed commit
+SP=c15fcf32935fc69e04505e2890a3bb1499d172fb
+curl -fsSL -o /tmp/app-deploy "https://raw.githubusercontent.com/Pascal-Organisation/security-pipeline/$SP/deployer/app-deploy"
+less /tmp/app-deploy                                       # read it before installing
+install -m 0755 /tmp/app-deploy /usr/local/sbin/app-deploy
+install -d -m 0755 /etc/app-deploy
+install -m 0644 solar.conf /etc/app-deploy/solar.conf
 install -m 0644 systemd/* /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now solar-deploy.timer solar-backup.timer
@@ -70,3 +77,20 @@ journalctl -u solar-deploy -n 50           # deploy history
 docker compose --project-name solar -f /srv/solar/docker-compose.yml --env-file /srv/solar/image.env ps
 curl -s localhost:9108/metrics | grep goodwe_ppv
 ```
+
+## Migrating an existing host from solar-deploy.sh
+
+`image.env` keeps its format (`SOLAR_IMAGE`, `SOLAR_BUILT_AT`), so the running release
+stays the rollback target.
+
+```bash
+systemctl stop solar-deploy.timer
+# install app-deploy + /etc/app-deploy/solar.conf as in step 2, then:
+install -m 0644 systemd/solar-deploy.service /etc/systemd/system/
+rm /usr/local/bin/solar-deploy.sh
+systemctl daemon-reload && systemctl start solar-deploy.service && systemctl start solar-deploy.timer
+journalctl -u solar-deploy -n 30
+```
+
+The first run deploys the first image built by security-pipeline (new registry path
+`ghcr.io/pascal-organisation/solar`, new signing identity).

@@ -43,7 +43,7 @@ jobs:
       - name: Merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REQUIRED_CHECKS: "Lint & test"
+          REQUIRED_CHECKS: "Lint & test|Security / Workflow lint (actionlint + zizmor)|Security / Secret scan (TruffleHog)|Security / SAST (CodeQL)|Security / Dependencies, IaC & licences (Trivy)|Security / Dockerfile lint (hadolint)"
           RELEASE_WORKFLOW: "release.yml"
         run: |
           python3 .github/scripts/bot_merge.py

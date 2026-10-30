@@ -14,7 +14,7 @@ RUN /venv/bin/pip install --require-hashes --no-deps -r /tmp/requirements.lock \
 
 FROM ${PYTHON_IMAGE} AS runtime
 ARG GIT_SHA=unknown
-LABEL org.opencontainers.image.source="https://github.com/pascal05/solar" \
+LABEL org.opencontainers.image.source="https://github.com/Pascal-Organisation/solar" \
       org.opencontainers.image.description="Local-first GoodWe inverter dashboard" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="${GIT_SHA}"
