@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from solar.config import Config
 from solar.db import Store
-from solar.sems import parse_daily, parse_intraday
+from solar.sems import parse_daily, parse_intraday, password_hash
 from solar.sensors import to_sample
 from solar.web import create_app, energy_kpis
 
@@ -204,3 +204,8 @@ def test_battery_kpis():
     # A day with barely any charging says nothing about efficiency.
     assert energy_kpis({"charge_kwh": 0.4, "discharge_kwh": 3.0})["battery_efficiency"] is None
     assert "battery_eur" not in energy_kpis({"charge_kwh": 5.0, "discharge_kwh": 4.0})
+
+
+def test_password_hash_matches_sems_wire_format():
+    # base64(md5hex("secret"))
+    assert password_hash("secret") == "NWViZTIyOTRlY2QwZTBmMDhlYWI3NjkwZDJhNmVlNjk="

@@ -54,7 +54,9 @@ class SemsError(RuntimeError):
 
 
 def password_hash(password: str) -> str:
-    return base64.b64encode(hashlib.md5(password.encode()).hexdigest().encode()).decode()  # noqa: S324
+    # The SEMS login API mandates base64(md5hex(password)); MD5 is a wire-format requirement, not our choice.
+    digest = hashlib.md5(password.encode(), usedforsecurity=False).hexdigest()
+    return base64.b64encode(digest.encode()).decode()
 
 
 def signature(uid: str, token: str) -> str:
