@@ -29,7 +29,7 @@ jobs:
 
   build:
     needs: ci
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@55d00bef9c7351e907553b3352de88dacb3eff42 # v0.3.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@bed606950489a2d5af437058445d712aa7a9fe6f # v0.4.0
     permissions:
       contents: read
       packages: write # push image, signature and attestations to GHCR
