@@ -58,7 +58,7 @@ Access JWT itself, so requests without a valid Access session never reach the ap
 
 ```mermaid
 flowchart LR
-  pr["PR"] --> ci["CI: ruff, pytest,<br/>shellcheck, build"]
+  pr["PR"] --> ci["CI: ruff, pytest, shellcheck, build<br/>+ org security gates"]
   main["push to main"] --> rel["security-pipeline:<br/>build → Trivy → SBOM (CycloneDX)<br/>→ GHCR → cosign keyless<br/>+ SBOM/SLSA attestations"]
   rel -.-> host["host timer (10 min):<br/>verify signature + attestations + freshness<br/>→ backup → deploy → health<br/>→ rollback on failure"]
 ```
