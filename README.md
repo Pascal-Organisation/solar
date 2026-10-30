@@ -58,18 +58,23 @@ Access JWT itself, so requests without a valid Access session never reach the ap
 
 ```mermaid
 flowchart LR
-  pr["PR"] --> ci["CI: ruff, pytest,<br/>shellcheck, build"]
-  main["push to main"] --> rel["build → Trivy → SBOM<br/>→ GHCR → cosign (keyless)"]
-  rel -.-> host["host timer (10 min):<br/>verify signature + freshness<br/>→ backup → deploy → health<br/>→ rollback on failure"]
+  pr["PR"] --> ci["CI: ruff, pytest, shellcheck, build<br/>+ org security gates"]
+  main["push to main"] --> rel["security-pipeline:<br/>build → Trivy → SBOM (CycloneDX)<br/>→ GHCR → cosign keyless<br/>+ SBOM/SLSA attestations"]
+  rel -.-> host["host timer (10 min):<br/>verify signature + attestations + freshness<br/>→ backup → deploy → health<br/>→ rollback on failure"]
 ```
 
 - CI runs only on GitHub-hosted runners (public repo — no self-hosted runner ever
   executes fork code).
 - Every third-party action is pinned by commit SHA, base images by digest, Python
   dependencies by hash ([`requirements.lock`](requirements.lock)).
+- Org-wide security gates come from
+  [security-pipeline](https://github.com/Pascal-Organisation/security-pipeline):
+  actionlint, zizmor, TruffleHog, CodeQL, Trivy (deps, IaC, image), hadolint.
 - The host **pulls**; CI holds no credential to it. The deployer
-  ([`deploy/solar-deploy.sh`](deploy/solar-deploy.sh)) refuses any image not signed by
-  this repository's release workflow on `main`, and any image not built strictly later
+  ([`app-deploy`](https://github.com/Pascal-Organisation/security-pipeline/blob/main/deployer/app-deploy),
+  config [`deploy/solar.conf`](deploy/solar.conf)) refuses any image not signed by
+  security-pipeline's build workflow for this repository on `main`, any image without
+  the SBOM and SLSA provenance attestations, and any image not built strictly later
   than the one running (replay protection).
 
 ## Running it yourself

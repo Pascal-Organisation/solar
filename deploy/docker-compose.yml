@@ -1,5 +1,5 @@
 # Production compose. Lives on the host at /srv/solar/docker-compose.yml and is
-# synced from the verified image by solar-deploy.sh on every release.
+# synced from the verified image by app-deploy on every release.
 #
 # No `build:` key on purpose: the host only runs the exact image CI built, scanned
 # and signed, pinned by digest via image.env:
