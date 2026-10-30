@@ -20,7 +20,7 @@ GHCR, Sigstore). Needs `cosign` >= v3 for the attestation checks.
 ## 2. Host setup (inside the CT)
 
 ```bash
-apt install docker.io docker-compose cosign   # or Docker's apt repo
+apt install docker.io docker-compose cosign jq   # or Docker's apt repo
 install -d -m 0755 /srv/solar
 install -d -o 10001 -g 10001 -m 0750 /srv/solar/data
 install -d -m 0700 /etc/solar
@@ -30,7 +30,7 @@ install -m 0644 cloudflared.example.yml /etc/solar/cloudflared.yml   # then edit
 install -o 65532 -g 65532 -m 0400 /dev/stdin /etc/solar/tunnel_token <<< "<token>"
 install -m 0755 solar-backup.sh /usr/local/bin/
 # generic deployer from security-pipeline, pinned to a reviewed commit
-SP=fdc5462ae3665d05fb6c21ce09dc42f9801a285b
+SP=55d00bef9c7351e907553b3352de88dacb3eff42
 curl -fsSL -o /tmp/app-deploy "https://raw.githubusercontent.com/Pascal-Organisation/security-pipeline/$SP/deployer/app-deploy"
 less /tmp/app-deploy                                       # read it before installing
 install -m 0755 /tmp/app-deploy /usr/local/sbin/app-deploy
