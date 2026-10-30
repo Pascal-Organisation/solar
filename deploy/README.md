@@ -30,7 +30,7 @@ install -m 0644 cloudflared.example.yml /etc/solar/cloudflared.yml   # then edit
 install -o 65532 -g 65532 -m 0400 /dev/stdin /etc/solar/tunnel_token <<< "<token>"
 install -m 0755 solar-backup.sh /usr/local/bin/
 # generic deployer from security-pipeline, pinned to a reviewed commit
-SP=c15fcf32935fc69e04505e2890a3bb1499d172fb
+SP=fdc5462ae3665d05fb6c21ce09dc42f9801a285b
 curl -fsSL -o /tmp/app-deploy "https://raw.githubusercontent.com/Pascal-Organisation/security-pipeline/$SP/deployer/app-deploy"
 less /tmp/app-deploy                                       # read it before installing
 install -m 0755 /tmp/app-deploy /usr/local/sbin/app-deploy
