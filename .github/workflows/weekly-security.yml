@@ -1,0 +1,30 @@
+## Weekly, independent of pushes: full-history secret scan and fresh CVE data.
+## A separate file, so that the schedule can never trigger a release or a deploy.
+name: Weekly security
+
+on:
+  schedule:
+    - cron: "11 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  security:
+    name: Security
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@76b2ac5b33fd44b617aa41bc6c8a0b9c279b64f2 # v1.1.0
+    # Ceiling for the nested jobs; each declares its own narrower permissions.
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    with:
+      sast-languages: python,javascript-typescript,actions
+      dockerfile: Dockerfile
+
+  # The released image against today's CVE data; a release was only clean on build day.
+  image-rescan:
+    name: Image re-scan
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/image-rescan.yml@76b2ac5b33fd44b617aa41bc6c8a0b9c279b64f2 # v1.1.0
+    permissions:
+      packages: read
