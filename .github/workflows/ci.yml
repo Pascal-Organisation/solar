@@ -23,7 +23,7 @@ jobs:
   # Public repo -> the reusable workflow forces GitHub-hosted runners.
   security:
     name: Security
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@d4daef03cb132a36ff9db04221f0b4261c136a5c # v1.0.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@76b2ac5b33fd44b617aa41bc6c8a0b9c279b64f2 # v1.1.0
     permissions:
       contents: read
       actions: read # CodeQL needs workflow run metadata
