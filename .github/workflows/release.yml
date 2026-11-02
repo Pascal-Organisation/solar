@@ -26,6 +26,8 @@ jobs:
       contents: read
       actions: read # CodeQL (security job inside ci.yml)
       security-events: write # CodeQL results
+    with:
+      security: false # the release gate below is the one that counts
 
   build:
     needs: ci
