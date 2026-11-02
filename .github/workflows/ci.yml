@@ -7,6 +7,11 @@ on:
   push:
     branches-ignore: [main] # main is gated by release.yml, which calls this workflow
   workflow_call:
+    inputs:
+      security:
+        description: "false in release.yml: build-container.yml runs the same gate itself"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -23,6 +28,9 @@ jobs:
   # Public repo -> the reusable workflow forces GitHub-hosted runners.
   security:
     name: Security
+    # Skipped only when release.yml calls this workflow: the release runs the gate itself,
+    # and only that run counts (its signature is what the host checks).
+    if: ${{ inputs.security != false }}
     uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@bb14b2d727472e34dc6c8f30ef1e178d3dbb9fc0 # v2.0.0
     permissions:
       contents: read
