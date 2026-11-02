@@ -8,10 +8,10 @@ on:
     branches-ignore: [main] # main is gated by release.yml, which calls this workflow
   workflow_call:
     inputs:
-      security:
-        description: "false in release.yml: build-container.yml runs the same gate itself"
+      skip_security:
+        description: "true in release.yml: build-container.yml runs the same gate itself"
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -29,8 +29,9 @@ jobs:
   security:
     name: Security
     # Skipped only when release.yml calls this workflow: the release runs the gate itself,
-    # and only that run counts (its signature is what the host checks).
-    if: ${{ inputs.security != false }}
+    # and only that run counts (its signature is what the host checks). Unset on PRs and
+    # pushes, and null != true, so it runs there (null == false would skip it).
+    if: ${{ inputs.skip_security != true }}
     uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@bb14b2d727472e34dc6c8f30ef1e178d3dbb9fc0 # v2.0.0
     permissions:
       contents: read
