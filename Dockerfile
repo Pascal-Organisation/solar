@@ -20,7 +20,7 @@ LABEL org.opencontainers.image.source="https://github.com/Pascal-Organisation/so
       org.opencontainers.image.revision="${GIT_SHA}"
 # No pip or build tooling at runtime: only the prebuilt venv and the source.
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin solar \
-    && rm -rf /usr/local/lib/python3.13/site-packages/pip* /usr/local/bin/pip* \
+    && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/bin/pip* \
     && mkdir /data && chown 10001:10001 /data
 COPY --from=build /venv /venv
 COPY src /app/src
