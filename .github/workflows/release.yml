@@ -26,12 +26,13 @@ jobs:
       contents: read
       actions: read # CodeQL (security job inside ci.yml)
       security-events: write # CodeQL results
+      packages: read # nested security job pulls the private ci-toolbox (startup_failure without it)
     with:
       skip_security: true # the release gate below is the one that counts
 
   build:
     needs: ci
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@b02ec21a3e621d841994dacfe4ddf8974c8287f3 # v3.0.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@4789da7e72e2a536afdbc8d758fd26fb5290f369 # v3.0.1
     permissions:
       contents: read
       actions: read # CodeQL (public repos), inside the gate
