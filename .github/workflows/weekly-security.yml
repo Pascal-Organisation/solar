@@ -12,12 +12,13 @@ permissions: {}
 jobs:
   security:
     name: Security
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@6eb47a0b56ad61b3ba3e773e5a90d8c2f79eef0f # v2.3.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@46248dde5a8ce662aa6e13874ad1e94e52cd2941 # v3-workflows (to be replaced by v3.0.0 SHA)
     # Ceiling for the nested jobs; each declares its own narrower permissions.
     permissions:
       contents: read
       actions: read
       security-events: write
+      packages: read # pull the private ci-toolbox (GitHub-hosted path)
     with:
       sast-languages: python,javascript-typescript,actions
       dockerfile: Dockerfile
@@ -25,6 +26,6 @@ jobs:
   # The released image against today's CVE data; a release was only clean on build day.
   image-rescan:
     name: Image re-scan
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/image-rescan.yml@6eb47a0b56ad61b3ba3e773e5a90d8c2f79eef0f # v2.3.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/image-rescan.yml@46248dde5a8ce662aa6e13874ad1e94e52cd2941 # v3-workflows (to be replaced by v3.0.0 SHA)
     permissions:
       packages: read
