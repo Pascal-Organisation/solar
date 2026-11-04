@@ -31,7 +31,7 @@ jobs:
 
   build:
     needs: ci
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@46248dde5a8ce662aa6e13874ad1e94e52cd2941 # v3-workflows (to be replaced by v3.0.0 SHA)
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@b02ec21a3e621d841994dacfe4ddf8974c8287f3 # pin-toolbox (to be replaced by v3.0.0 SHA)
     permissions:
       contents: read
       actions: read # CodeQL (public repos), inside the gate

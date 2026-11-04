@@ -32,7 +32,7 @@ jobs:
     # and only that run counts (its signature is what the host checks). Unset on PRs and
     # pushes, and null != true, so it runs there (null == false would skip it).
     if: ${{ inputs.skip_security != true }}
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@46248dde5a8ce662aa6e13874ad1e94e52cd2941 # v3-workflows (to be replaced by v3.0.0 SHA)
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@b02ec21a3e621d841994dacfe4ddf8974c8287f3 # pin-toolbox (to be replaced by v3.0.0 SHA)
     permissions:
       contents: read
       actions: read # CodeQL needs workflow run metadata
