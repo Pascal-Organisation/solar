@@ -32,7 +32,7 @@ jobs:
 
   build:
     needs: ci
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@4789da7e72e2a536afdbc8d758fd26fb5290f369 # v3.0.1
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/build-container.yml@81ae25c0aa85aa044384a505ebcdcf80027a09c5 # v3.0.2
     permissions:
       contents: read
       actions: read # CodeQL (public repos), inside the gate
