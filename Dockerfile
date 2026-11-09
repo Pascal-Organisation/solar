@@ -18,6 +18,11 @@ LABEL org.opencontainers.image.source="https://github.com/Pascal-Organisation/so
       org.opencontainers.image.description="Local-first GoodWe inverter dashboard" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="${GIT_SHA}"
+# Debian security fixes ship before the upstream python image is rebuilt; apply them so the
+# Trivy gate (fixable HIGH/CRITICAL) does not block releases on base-image lag.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 # No pip or build tooling at runtime: only the prebuilt venv and the source.
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin solar \
     && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/bin/pip* \
