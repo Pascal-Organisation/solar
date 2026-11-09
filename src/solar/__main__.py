@@ -37,10 +37,10 @@ def _web(cfg: Config, _: argparse.Namespace) -> None:
 def _sems_client():
     from .sems import SemsClient
 
-    account, password = env("SEMS_ACCOUNT"), env("SEMS_PASSWORD")
-    if not account or not password:
+    account, sems_pw = env("SEMS_ACCOUNT"), env("SEMS_PASSWORD")
+    if not account or not sems_pw:
         raise SystemExit("set SEMS_ACCOUNT and SEMS_PASSWORD")
-    return SemsClient(account, password, pace=float(os.environ.get("SEMS_PACE", "5")))
+    return SemsClient(account, sems_pw, pace=float(os.environ.get("SEMS_PACE", "5")))
 
 
 def _sems_import(cfg: Config, args: argparse.Namespace) -> None:
