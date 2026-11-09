@@ -94,3 +94,13 @@ journalctl -u solar-deploy -n 30
 
 The first run deploys the first image built by security-pipeline (new registry path
 `ghcr.io/pascal-organisation/solar`, new signing identity).
+
+## Secrets as files
+
+Every setting read by `solar.config` (`SOLAR_*`, `TZ`) and the SEMS credentials
+(`SEMS_ACCOUNT`, `SEMS_PASSWORD`) can also be supplied as a file: set `<NAME>_FILE`
+to a path (a read-only Kubernetes Secret volume or a Docker secret under
+`/run/secrets/`) and the stripped file contents are used instead of the plain
+variable. `<NAME>_FILE` wins over `<NAME>`; an unreadable file aborts startup.
+Plain environment variables keep working. Prefer files for anything sensitive,
+since environment values leak through `/proc`, crash dumps and `docker inspect`.

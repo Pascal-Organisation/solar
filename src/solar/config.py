@@ -8,11 +8,27 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
+def env(name: str, default: str | None = None) -> str | None:
+    """Read a setting; if ``<name>_FILE`` is set, read it from that file instead.
+
+    The file (e.g. a mounted Kubernetes/Docker secret) wins over the plain
+    variable; its contents are stripped. An unreadable file aborts startup rather
+    than silently falling back. Without ``_FILE`` the plain variable is used."""
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        try:
+            return Path(path).read_text(encoding="utf-8").strip()
+        except OSError as e:
+            raise SystemExit(f"cannot read {name}_FILE ({path}): {e.strerror}") from None
+    return os.environ.get(name, default)
+
+
 def _env(name: str, default: str | None = None) -> str:
-    value = os.environ.get(name, default)
+    value = env(name, default)
     if value is None:
         raise SystemExit(f"missing required environment variable {name}")
     return value
@@ -38,7 +54,7 @@ class Config:
             db_path=_env("SOLAR_DB", "/data/solar.db"),
             tz=ZoneInfo(_env("TZ", "Europe/Berlin")),
             inverter_host=_env("SOLAR_INVERTER_HOST", ""),
-            inverter_family=os.environ.get("SOLAR_INVERTER_FAMILY") or None,
+            inverter_family=env("SOLAR_INVERTER_FAMILY") or None,
             # Live values (dashboard, metrics) refresh every poll; raw samples are
             # persisted at most every SOLAR_STORE_INTERVAL seconds.
             poll_interval=float(_env("SOLAR_POLL_INTERVAL", "2")),

@@ -12,7 +12,7 @@ import time
 import urllib.request
 from datetime import date
 
-from .config import Config
+from .config import Config, env
 
 
 def _collect(cfg: Config, _: argparse.Namespace) -> None:
@@ -37,7 +37,7 @@ def _web(cfg: Config, _: argparse.Namespace) -> None:
 def _sems_client():
     from .sems import SemsClient
 
-    account, password = os.environ.get("SEMS_ACCOUNT"), os.environ.get("SEMS_PASSWORD")
+    account, password = env("SEMS_ACCOUNT"), env("SEMS_PASSWORD")
     if not account or not password:
         raise SystemExit("set SEMS_ACCOUNT and SEMS_PASSWORD")
     return SemsClient(account, password, pace=float(os.environ.get("SEMS_PACE", "5")))
