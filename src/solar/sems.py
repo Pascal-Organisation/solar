@@ -53,8 +53,8 @@ class SemsError(RuntimeError):
     pass
 
 
-def password_hash(password: str) -> str:
-    return base64.b64encode(hashlib.md5(password.encode()).hexdigest().encode()).decode()  # noqa: S324
+def password_hash(sems_pw: str) -> str:
+    return base64.b64encode(hashlib.md5(sems_pw.encode()).hexdigest().encode()).decode()  # noqa: S324
 
 
 def signature(uid: str, token: str) -> str:
@@ -64,9 +64,9 @@ def signature(uid: str, token: str) -> str:
 
 
 class SemsClient:
-    def __init__(self, account: str, password: str, pace: float = 5.0):
+    def __init__(self, account: str, sems_pw: str, pace: float = 5.0):
         self.account = account
-        self.password = password
+        self.sems_pw = sems_pw
         self.pace = pace
         self.session: dict[str, Any] | None = None
         self.api = DEFAULT_API
@@ -90,7 +90,7 @@ class SemsClient:
         anon = {"uid": "", "timestamp": 0, "token": "", "client": "semsPlusWeb",
                 "version": "", "language": "en"}
         r = self.http.post(LOGIN_URL, headers={"token": json.dumps(anon), "X-Signature": signature("", "")},
-                           json={"account": self.account, "pwd": password_hash(self.password),
+                           json={"account": self.account, "pwd": password_hash(self.sems_pw),
                                  "agreement": 1, "isChinese": False, "isLocal": False})
         r.raise_for_status()
         body = r.json()
