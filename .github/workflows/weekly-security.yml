@@ -12,7 +12,7 @@ permissions: {}
 jobs:
   security:
     name: Security
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@77922682997c548bc23600ff13a10da86fc8471f # v3.1.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@84d30a98ac52dd896d70180838c5c91c7be34159 # v3.1.1
     # Ceiling for the nested jobs; each declares its own narrower permissions.
     permissions:
       contents: read
@@ -26,6 +26,6 @@ jobs:
   # The released image against today's CVE data; a release was only clean on build day.
   image-rescan:
     name: Image re-scan
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/image-rescan.yml@77922682997c548bc23600ff13a10da86fc8471f # v3.1.0
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/image-rescan.yml@84d30a98ac52dd896d70180838c5c91c7be34159 # v3.1.1
     permissions:
       packages: read
