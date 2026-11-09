@@ -54,7 +54,7 @@ class SemsError(RuntimeError):
 
 
 def password_hash(sems_pw: str) -> str:
-    return base64.b64encode(hashlib.md5(password.encode(), usedforsecurity=False).hexdigest().encode()).decode()  # noqa: S324
+    return base64.b64encode(hashlib.md5(sems_pw.encode()).hexdigest().encode()).decode()  # noqa: S324
 
 
 def signature(uid: str, token: str) -> str:
