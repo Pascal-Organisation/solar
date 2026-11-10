@@ -3,7 +3,7 @@
 # One image, two roles (compose picks the command): `collect` and `web`.
 # Base image pinned by digest, Python dependencies pinned by hash (requirements.lock).
 
-ARG PYTHON_IMAGE=python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
+ARG PYTHON_IMAGE=python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 FROM ${PYTHON_IMAGE} AS build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
@@ -18,6 +18,11 @@ LABEL org.opencontainers.image.source="https://github.com/Pascal-Organisation/so
       org.opencontainers.image.description="Local-first GoodWe inverter dashboard" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="${GIT_SHA}"
+# Debian security fixes ship before the upstream python image is rebuilt; apply them so the
+# Trivy gate (fixable HIGH/CRITICAL) does not block releases on base-image lag.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends upgrade \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 # No pip or build tooling at runtime: only the prebuilt venv and the source.
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin solar \
     && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/bin/pip* \
