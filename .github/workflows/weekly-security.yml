@@ -12,7 +12,7 @@ permissions: {}
 jobs:
   security:
     name: Security
-    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@859a35951906268b38e73a0a1d7a97ee4c808264 # v3.4.2
+    uses: Pascal-Organisation/security-pipeline/.github/workflows/ci.yml@f7ceac730239a5e81a065d53b9a6a00468d874f6 # v3.4.3
     # Ceiling for the nested jobs; each declares its own narrower permissions.
     permissions:
       contents: read
