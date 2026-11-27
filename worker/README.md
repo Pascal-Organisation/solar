@@ -39,6 +39,10 @@ place. After switching from the old PIN, remove the old secret:
 
 ## Deploy
 
+Workers Builds (Cloudflare Git integration) deploys automatically on every push to
+`main` that touches `worker/` (root directory `worker`, preview builds off). Manual
+fallback:
+
 ```sh
 npx wrangler deploy
 ```
