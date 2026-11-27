@@ -1,16 +1,17 @@
-// PIN gate for solar.pascalhaag.de.
+// Passphrase gate for solar.pascalhaag.de.
 //
-// Shows a PIN page, sets a signed cookie and proxies every request to the
+// Shows a passphrase page, sets a signed cookie and proxies every request to the
 // Access-protected origin (solar-origin.*) using an Access service token. The
 // origin itself stays locked: cloudflared still requires a valid Access JWT.
 //
-// Secrets: PIN, COOKIE_KEY, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
+// Secrets: PASSPHRASE, COOKIE_KEY, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
 // Vars:    ORIGIN_HOST, SESSION_DAYS
-// Binding: LOGIN_LIMITER (rate limit for PIN attempts per IP)
+// Binding: LOGIN_LIMITER (rate limit for login attempts per IP)
 
-const COOKIE = "solar_pin";
-const LOGIN_PATH = "/__pin";
-const LOGOUT_PATH = "/__pin/logout";
+const COOKIE = "solar_session";
+const LOGIN_PATH = "/__login";
+const LOGOUT_PATH = "/__login/logout";
+const MIN_PASSPHRASE_LENGTH = 12;
 
 const enc = new TextEncoder();
 
@@ -28,13 +29,24 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
-// The PIN is part of the signed message, so changing the PIN ends all sessions.
+// Same normalisation for the secret and the input, so a stray space or a different
+// Unicode form of an umlaut doesn't lock you out.
+const normalize = (s) => String(s ?? "").normalize("NFC").trim();
+
+// Fail closed: without a sufficiently long passphrase and a cookie key nobody gets in
+// (an unset secret must never turn into a guessable value like "undefined").
+function configured(env) {
+  return normalize(env.PASSPHRASE).length >= MIN_PASSPHRASE_LENGTH && String(env.COOKIE_KEY || "").length >= 32;
+}
+
+// The passphrase is part of the signed message, so changing it ends all sessions.
 async function sign(env, exp) {
-  return `${exp}.${await hmac(env.COOKIE_KEY, `${exp}|${env.PIN}`)}`;
+  return `${exp}.${await hmac(env.COOKIE_KEY, `${exp}|${normalize(env.PASSPHRASE)}`)}`;
 }
 
 async function hasSession(request, env) {
-  const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)solar_pin=([^;]+)/);
+  if (!configured(env)) return false;
+  const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)solar_session=([^;]+)/);
   if (!m) return false;
   const [exp] = m[1].split(".");
   if (!/^\d+$/.test(exp) || Number(exp) < Date.now() / 1000) return false;
@@ -61,15 +73,15 @@ form{width:100%;max-width:320px;background:var(--surface);border:1px solid var(-
 h1{margin:0;font-size:1.25rem;display:flex;align-items:center;gap:8px}
 h1 span{width:12px;height:12px;border-radius:50%;background:var(--accent)}
 p{margin:0;color:var(--muted);font-size:.9rem}
-input{font:inherit;font-size:1.5rem;letter-spacing:.3em;text-align:center;padding:10px;border-radius:10px;border:1px solid var(--ring);background:var(--page);color:var(--ink);width:100%}
+input{font:inherit;font-size:1.1rem;padding:10px;border-radius:10px;border:1px solid var(--ring);background:var(--page);color:var(--ink);width:100%}
 input:focus{outline:2px solid var(--accent);outline-offset:1px}
 button{font:inherit;font-weight:600;padding:10px;border:0;border-radius:10px;background:var(--ink);color:var(--page);cursor:pointer}
 .err{color:var(--bad)}
 </style></head><body>
 <form method="post" action="${LOGIN_PATH}">
 <h1><span></span>Solar</h1>
-<p>Bitte PIN eingeben.</p>
-<input name="pin" type="password" inputmode="numeric" autocomplete="current-password" autofocus required aria-label="PIN">
+<p>Bitte Passphrase eingeben.</p>
+<input name="passphrase" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" autofocus required aria-label="Passphrase">
 <input type="hidden" name="next" value="${esc(next)}">
 ${error ? `<p class="err">${esc(error)}</p>` : ""}
 <button type="submit">Öffnen</button>
@@ -84,13 +96,17 @@ async function handleLogin(request, env) {
   const url = new URL(request.url);
   if (request.method !== "POST") return loginPage(safeNext(url.searchParams.get("next")), "");
 
+  if (!configured(env)) return loginPage("/", "Login ist nicht eingerichtet.", 503);
+
   const form = await request.formData();
   const next = safeNext(String(form.get("next") || "/"));
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   const { success } = await env.LOGIN_LIMITER.limit({ key: ip });
   if (!success) return loginPage(next, "Zu viele Versuche – bitte eine Minute warten.", 429);
 
-  if (!safeEqual(String(form.get("pin") || ""), env.PIN)) return loginPage(next, "Falsche PIN.", 401);
+  if (!safeEqual(normalize(form.get("passphrase")), normalize(env.PASSPHRASE))) {
+    return loginPage(next, "Falsche Passphrase.", 401);
+  }
 
   const maxAge = Number(env.SESSION_DAYS || 30) * 86400;
   const value = await sign(env, Math.floor(Date.now() / 1000) + maxAge);
@@ -171,7 +187,7 @@ export default {
 
     if (!(await hasSession(request, env))) {
       // API calls get a plain 401 so the dashboard JS doesn't parse an HTML page.
-      if (url.pathname.startsWith("/api/")) return new Response("PIN required", { status: 401 });
+      if (url.pathname.startsWith("/api/")) return new Response("Login required", { status: 401 });
       return Response.redirect(`${url.origin}${LOGIN_PATH}?next=${encodeURIComponent(url.pathname + url.search)}`, 303);
     }
     return proxy(request, env);
