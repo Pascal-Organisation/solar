@@ -3,7 +3,7 @@
 # One image, two roles (compose picks the command): `collect` and `web`.
 # Base image pinned by digest, Python dependencies pinned by hash (requirements.lock).
 
-ARG PYTHON_IMAGE=python:3.15-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
+ARG PYTHON_IMAGE=python:3.15-slim-trixie@sha256:08a4c22c92b79ec821a7ad49768480039ee5b7accac3955228e75366e30abc8e
 
 FROM ${PYTHON_IMAGE} AS build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
